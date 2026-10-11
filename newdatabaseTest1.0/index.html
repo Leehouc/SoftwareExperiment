@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>新数据库测试页</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="page-shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="数据库测试页首页">
+        <span class="brand-mark">DB</span>
+        <span>课程注册系统 <small>数据库检查</small></span>
+      </a>
+      <div class="topbar-right">
+        <span class="local-tag"><span class="local-dot"></span>本机只读测试</span>
+        <button class="button button-light" id="refresh-button" type="button">刷新状态</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div>
+          <p class="eyebrow">MYSQL CONNECTION · READ ONLY</p>
+          <h1>新建数据库测试页</h1>
+          <p class="hero-copy">检查数据库连接、表结构和迁移后的演示数据。</p>
+        </div>
+        <div class="connection-pill" id="connection-pill" data-state="loading">
+          <span class="connection-dot"></span>
+          <span id="connection-label">正在检查连接</span>
+        </div>
+      </section>
+
+      <section class="summary-grid" aria-label="数据库连接信息">
+        <article class="summary-card">
+          <span class="summary-icon icon-blue">↗</span>
+          <div><p class="card-label">目标数据库</p><strong id="database-name">读取中</strong></div>
+          <span class="card-foot">当前连接</span>
+        </article>
+        <article class="summary-card">
+          <span class="summary-icon icon-purple">◈</span>
+          <div><p class="card-label">MySQL 版本</p><strong id="server-version">读取中</strong></div>
+          <span class="card-foot">服务器信息</span>
+        </article>
+        <article class="summary-card">
+          <span class="summary-icon icon-green">▦</span>
+          <div><p class="card-label">业务数据表</p><strong id="table-total">—</strong></div>
+          <span class="card-foot">已检查的表</span>
+        </article>
+        <article class="summary-card">
+          <span class="summary-icon icon-amber">#</span>
+          <div><p class="card-label">数据记录总数</p><strong id="record-total">—</strong></div>
+          <span class="card-foot">所有业务表合计</span>
+        </article>
+      </section>
+
+      <section class="content-grid">
+        <article class="panel table-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">SCHEMA OVERVIEW</p>
+              <h2>数据表状态</h2>
+            </div>
+            <span class="subtle" id="last-updated">等待检查</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>表名称</th><th>用途</th><th class="number-cell">记录数</th><th></th></tr></thead>
+              <tbody id="table-list">
+                <tr><td colspan="4" class="empty-cell">正在连接数据库…</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="panel-note"><span class="note-mark">i</span>每张表只执行只读计数查询；此页面不会新增、修改或删除数据库记录。</p>
+        </article>
+
+        <aside class="panel info-panel">
+          <p class="eyebrow">CONNECTION DETAILS</p>
+          <h2>连接信息</h2>
+          <dl class="detail-list">
+            <div><dt>数据库</dt><dd id="detail-database">—</dd></div>
+            <div><dt>登录账号</dt><dd id="detail-user">—</dd></div>
+            <div><dt>访问地址</dt><dd>127.0.0.1:3306</dd></div>
+            <div><dt>网页地址</dt><dd id="page-address">127.0.0.1:8090</dd></div>
+          </dl>
+          <div class="permission-box">
+            <span class="permission-icon">✓</span>
+            <div><strong>安全的只读检查</strong><p>网页只展示预览字段，不读取密码哈希或加密身份信息。</p></div>
+          </div>
+        </aside>
+      </section>
+
+      <section class="panel preview-panel">
+        <div class="panel-heading preview-heading">
+          <div>
+            <p class="eyebrow">SAMPLE RECORDS</p>
+            <h2>数据预览</h2>
+            <p class="section-copy">选择一张表，查看最多 20 条非敏感字段。</p>
+          </div>
+          <label class="select-wrap">
+            <span class="sr-only">选择数据表</span>
+            <select id="table-select" disabled><option value="">连接后可选择数据表</option></select>
+          </label>
+        </div>
+        <div class="preview-meta" id="preview-meta">尚未加载数据</div>
+        <div class="table-wrap preview-table-wrap">
+          <table class="preview-table">
+            <thead id="preview-head"></thead>
+            <tbody id="preview-body"><tr><td class="empty-cell">连接数据库后可查看数据预览。</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <div class="error-banner" id="error-banner" role="alert" hidden>
+        <strong>数据库检查失败</strong>
+        <span id="error-message"></span>
+      </div>
+    </main>
+
+    <footer><span>课程注册系统 · 数据库测试工具</span><span>本地运行 · 只读模式</span></footer>
+  </div>
+  <script src="/app.js" defer></script>
+</body>
+</html>
