@@ -129,6 +129,30 @@ class CloseRegistrationTests(unittest.TestCase):
                 patch.object(server, "AMOUNT_CENTS_PER_CREDIT", 15000):
             return server._close_registration("TERM", {"user": {"userId": "R"}}, self.catalog)
 
+    def add_alternate(self, offering_id: str, order: int, *, assigned: bool = True) -> dict:
+        self.add_offering(offering_id, (), assigned=assigned)
+        self.db.executemany(
+            "INSERT INTO schedule_choices "
+            "(schedule_id, offering_id, choice_type, preference_order, selection_status) "
+            "VALUES (?, ?, 'ALTERNATE', ?, 'SELECTED')",
+            [(i, offering_id, order) for i in range(1, 4)],
+        )
+        return self.catalog["courseOfferings"][-1]
+
+    def add_four_primaries(self) -> None:
+        for offering_id in ("PRIMARY1", "PRIMARY2", "PRIMARY3", "INVALID_PRIMARY"):
+            self.add_offering(offering_id, (1, 2, 3))
+
+    def assert_replacement(self, alternate: str) -> None:
+        expected = {"PRIMARY1", "PRIMARY2", "PRIMARY3", alternate}
+        for offering_id in expected:
+            for table in ("enrollments", "schedule_choices"):
+                self.assertEqual(self.offering_states(table, offering_id), ["ENROLLED"] * 3)
+        for table in ("enrollments", "schedule_choices"):
+            self.assertEqual(self.offering_states(table, "INVALID_PRIMARY"), ["CANCELLED"] * 3)
+        self.assert_finalized()
+        self.assert_billing(expected, 180000)
+
     def offering_states(self, table: str, offering_id: str) -> list[str]:
         column = "enrollment_status" if table == "enrollments" else "selection_status"
         return [row[0] for row in self.db.execute(
@@ -219,6 +243,65 @@ class CloseRegistrationTests(unittest.TestCase):
         self.assertEqual(self.db.execute("SELECT status FROM student_schedules WHERE schedule_id = 4")
                          .fetchone()[0], "SUBMITTED")
         self.assert_billing({"VALID"}, 45000)
+
+    def test_invalid_primary_is_replaced_by_first_available_alternate(self) -> None:
+        self.add_four_primaries()
+        self.db.execute("DELETE FROM professor_offering_selections WHERE offering_id = 'INVALID_PRIMARY'")
+        self.add_alternate("FIRST_ALTERNATE", 1)
+        second = self.add_alternate("SECOND_ALTERNATE", 2)
+        second["enrolledCount"] = 3
+        result = self.close_registration()
+        self.assertEqual(result["cancelledOfferings"], ["INVALID_PRIMARY"])
+        self.assertEqual(result["cancelledSchedules"], 0)
+        self.assertEqual(result["billingTransactionsQueued"], 3)
+        self.assert_replacement("FIRST_ALTERNATE")
+        self.assertEqual(self.offering_states("enrollments", "SECOND_ALTERNATE"), [])
+        self.assertEqual(self.offering_states("schedule_choices", "SECOND_ALTERNATE"), ["CANCELLED"] * 3)
+
+    def test_withdrawn_professor_primary_is_replaced(self) -> None:
+        self.add_four_primaries()
+        self.db.execute("UPDATE professor_offering_selections SET selection_status = 'WITHDRAWN' "
+                        "WHERE offering_id = 'INVALID_PRIMARY'")
+        self.add_alternate("ALTERNATE", 1)
+        self.close_registration()
+        self.assert_replacement("ALTERNATE")
+
+    def test_cancelled_catalog_primary_is_replaced(self) -> None:
+        self.add_four_primaries()
+        self.catalog["courseOfferings"][-1]["status"] = "CANCELLED"
+        self.add_alternate("ALTERNATE", 1)
+        result = self.close_registration()
+        self.assertIn("INVALID_PRIMARY", result["cancelledOfferings"])
+        self.assert_replacement("ALTERNATE")
+
+    def test_primary_removed_from_catalog_is_replaced_and_cancelled_locally(self) -> None:
+        self.add_four_primaries()
+        self.catalog["courseOfferings"].pop()
+        self.add_alternate("ALTERNATE", 1)
+        result = self.close_registration()
+        self.assertIn("INVALID_PRIMARY", result["cancelledOfferings"])
+        self.assert_replacement("ALTERNATE")
+
+    def test_unavailable_first_alternate_is_skipped(self) -> None:
+        self.add_four_primaries()
+        self.db.execute("DELETE FROM professor_offering_selections WHERE offering_id = 'INVALID_PRIMARY'")
+        first = self.add_alternate("FULL_ALTERNATE", 1)
+        first["enrolledCount"] = 10
+        self.add_alternate("SECOND_ALTERNATE", 2)
+        self.close_registration()
+        self.assert_replacement("SECOND_ALTERNATE")
+        self.assertEqual(self.offering_states("enrollments", "FULL_ALTERNATE"), [])
+
+    def test_full_existing_primary_is_retained(self) -> None:
+        self.add_four_primaries()
+        self.catalog["courseOfferings"][0]["status"] = "FULL"
+        alternate = self.add_alternate("ALTERNATE", 1)
+        alternate["enrolledCount"] = 3
+        result = self.close_registration()
+        self.assertEqual(result["cancelledOfferings"], [])
+        self.assertEqual(self.offering_states("enrollments", "ALTERNATE"), [])
+        self.assertEqual(self.offering_states("schedule_choices", "PRIMARY1"), ["ENROLLED"] * 3)
+        self.assert_billing({"PRIMARY1", "PRIMARY2", "PRIMARY3", "INVALID_PRIMARY"}, 180000)
 
 
 if __name__ == "__main__":

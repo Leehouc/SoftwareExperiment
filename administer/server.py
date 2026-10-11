@@ -536,6 +536,19 @@ def _close_registration(semester_id: str, session: dict[str, Any], catalog: dict
                 str(row["choiceType"]).upper()
             ].append(str(row["offeringId"]))
 
+        # 先剔除失效开课，避免它们占据主选名额、人数或阻碍备选补位。
+        # 已注册的满员课程仍有效；满员只阻止新的选课，不影响原有注册。
+        unavailable_offerings = {
+            offering_id for offering_id, offering in semester_offerings.items()
+            if offering_id not in assigned
+            or str(offering.get("status", "开放")).upper()
+            not in {"开放", "OPEN", "AVAILABLE", "已满", "FULL"}
+        }
+        referenced_offerings = {
+            str(row["offeringId"]) for row in enrollment_rows + choice_rows
+        }
+        unavailable_offerings.update(referenced_offerings - semester_offerings.keys())
+
         # 为每名学生先保留可用主选，再按偏好顺序填充备选；检查教师、容量、先修课和时间冲突。
         selected: dict[int, list[str]] = {}
         offering_students: dict[str, set[str]] = {offering_id: set() for offering_id in semester_offerings}
@@ -543,7 +556,11 @@ def _close_registration(semester_id: str, session: dict[str, Any], catalog: dict
         for row in enrollment_rows:
             schedule_id = int(row["scheduleId"])
             offering_id = str(row["offeringId"])
-            if schedule_id in schedule_by_id and offering_id in semester_offerings:
+            if (
+                schedule_id in schedule_by_id
+                and offering_id in semester_offerings
+                and offering_id not in unavailable_offerings
+            ):
                 selected.setdefault(schedule_id, []).append(offering_id)
                 offering_students.setdefault(offering_id, set()).add(str(schedule_by_id[schedule_id]["studentId"]))
                 assigned_count[offering_id] = assigned_count.get(offering_id, 0) + 1
@@ -579,10 +596,9 @@ def _close_registration(semester_id: str, session: dict[str, Any], catalog: dict
                 assigned_count[offering_id] = assigned_count.get(offering_id, 0) + 1
 
         # 外部目录提供的既有名额计入开课人数；目录人数不写入新系统注册记录。
-        cancelled_offerings = {
+        cancelled_offerings = unavailable_offerings | {
             offering_id for offering_id in semester_offerings
-            if offering_id not in assigned
-            or len(offering_students.get(offering_id, set())) + external_counts.get(offering_id, 0)
+            if len(offering_students.get(offering_id, set())) + external_counts.get(offering_id, 0)
             < MINIMUM_OFFERING_ENROLLMENT
         }
         cursor = connection.cursor(dictionary=True)
