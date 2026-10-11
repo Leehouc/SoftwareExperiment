@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>学生课程注册系统</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <section class="login-screen" id="login-screen">
+    <div class="login-art">
+      <div class="art-orb orb-one"></div><div class="art-orb orb-two"></div>
+      <div class="art-grid"></div>
+      <div class="art-copy">
+        <div class="brand-lockup"><span class="brand-mark">CR</span><span>COURSE REGISTRATION<small>WYLIE COLLEGE</small></span></div>
+        <p class="art-kicker">STUDENT PORTAL · 2027 SPRING</p>
+        <h1>规划你的<br><em>下一学期。</em></h1>
+        <p class="art-description">在这里选择课程、安排课表，<br>并随时查看自己的学业进度。</p>
+        <div class="art-footer"><span class="art-line"></span>课程注册 · 成绩查询 · 学生服务</div>
+      </div>
+      <div class="art-decoration"><span>01</span><span>02</span><span>03</span><i></i></div>
+    </div>
+
+    <div class="login-side">
+      <div class="login-form-wrap">
+        <span class="mobile-brand">CR <small>学生服务</small></span>
+        <p class="eyebrow">STUDENT ACCESS</p>
+        <h2>欢迎回来</h2>
+        <p class="login-subtitle">使用你的学生账号登录课程注册系统。</p>
+        <form id="login-form" autocomplete="on">
+          <label for="username">用户名</label>
+          <div class="input-wrap"><span class="input-icon">⌁</span><input id="username" name="username" type="text" autocomplete="username" placeholder="例如 student.lin" required></div>
+          <label for="password">密码</label>
+          <div class="input-wrap"><span class="input-icon">◌</span><input id="password" name="password" type="password" autocomplete="current-password" placeholder="请输入密码" required><button class="password-toggle" type="button" id="toggle-password" aria-label="显示或隐藏密码">显示</button></div>
+          <button class="button button-primary login-button" type="submit" id="login-button">登录学生门户 <span>→</span></button>
+          <p class="form-message" id="login-message" role="alert"></p>
+        </form>
+        <div class="demo-box">
+          <div class="demo-box-title"><span class="demo-spark">✦</span><strong>演示账号</strong><small>供课程设计演示</small></div>
+          <button class="demo-account" type="button" data-username="student.lin" data-password="StudentDemo1!"><span class="avatar avatar-blue">林</span><span><strong>林晓雨</strong><small>student.lin</small></span><span class="demo-use">填入账号 ↗</span></button>
+          <button class="demo-account" type="button" data-username="student.chen" data-password="StudentDemo2!"><span class="avatar avatar-peach">陈</span><span><strong>陈嘉伟</strong><small>student.chen</small></span><span class="demo-use">填入账号 ↗</span></button>
+          <p class="demo-note">仅用于本机演示；请勿在真实环境使用演示密码。</p>
+        </div>
+        <p class="login-foot">需要帮助？请联系课程注册办公室。</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="portal" id="portal" hidden>
+    <aside class="sidebar">
+      <a class="side-brand" href="#home"><span class="brand-mark">CR</span><span>课程注册<small>学生门户</small></span></a>
+      <div class="side-section-label">学生工作台</div>
+      <nav class="side-nav" aria-label="学生功能导航">
+        <button class="nav-item active" data-page="home"><span class="nav-icon">⌂</span>总览</button>
+        <button class="nav-item" data-page="register"><span class="nav-icon">＋</span>课程选择</button>
+        <button class="nav-item" data-page="schedule"><span class="nav-icon">▦</span>我的课表</button>
+        <button class="nav-item" data-page="transcript"><span class="nav-icon">▤</span>成绩单</button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="help-card"><span class="help-icon">?</span><strong>需要帮助？</strong><p>选课或成绩遇到问题，可以联系教务办公室。</p><span class="help-link">查看帮助中心 ↗</span></div>
+        <div class="side-user"><span class="avatar avatar-blue" id="sidebar-avatar">学</span><span class="side-user-text"><strong id="sidebar-name">学生</strong><small id="sidebar-id">学号</small></span><button class="logout-icon" id="logout-button" aria-label="退出登录" title="退出登录">↗</button></div>
+      </div>
+    </aside>
+
+    <div class="portal-main">
+      <header class="topbar">
+        <div class="breadcrumb"><span>学生门户</span><b>/</b><strong id="breadcrumb-title">总览</strong></div>
+        <div class="topbar-actions">
+          <span class="connection-state"><i></i>已连接</span>
+          <label class="term-select-wrap"><span>学期</span><select id="semester-select" aria-label="选择学期"></select></label>
+          <button class="top-avatar" id="top-avatar" aria-label="账户">学</button>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <div class="page-alert" id="page-alert" role="status" hidden></div>
+
+        <section class="page-section active" id="page-home">
+          <div class="page-intro">
+            <div><p class="eyebrow" id="today-label">STUDENT DASHBOARD</p><h1>欢迎，<span id="welcome-name">同学</span><span class="wave">✦</span></h1><p class="intro-copy">准备好为下一学期做好安排了吗？</p></div>
+            <button class="button button-primary" data-go-page="register">开始选课 <span>→</span></button>
+          </div>
+          <div class="semester-banner" id="semester-banner">
+            <div class="semester-mark">学期</div>
+            <div class="semester-text"><span>当前查看</span><strong id="home-semester-name">正在读取学期</strong><small id="registration-dates">—</small></div>
+            <div class="banner-status" id="registration-status">读取中</div>
+            <div class="banner-decoration">SPRING<br><b>27</b></div>
+          </div>
+          <div class="metric-grid">
+            <article class="metric-card"><div class="metric-top"><span class="metric-icon metric-icon-blue">▦</span><span class="metric-caption">本学期</span></div><strong id="metric-course-count">—</strong><span class="metric-title">已选课程</span><div class="metric-foot"><span id="metric-credits">0 学分</span><span class="metric-dot"></span><span id="metric-schedule-status">课表草稿</span></div></article>
+            <article class="metric-card"><div class="metric-top"><span class="metric-icon metric-icon-violet">◷</span><span class="metric-caption">时间安排</span></div><strong id="metric-time-count">—</strong><span class="metric-title">每周上课时段</span><div class="metric-foot"><span>以当前主选课为准</span></div></article>
+            <article class="metric-card"><div class="metric-top"><span class="metric-icon metric-icon-green">✓</span><span class="metric-caption">学业进度</span></div><strong id="metric-completed">—</strong><span class="metric-title">已完成课程</span><div class="metric-foot"><span id="metric-gpa">成绩记录已同步</span></div></article>
+          </div>
+          <div class="home-grid">
+            <article class="card next-card">
+              <div class="card-heading"><div><p class="eyebrow">YOUR PLAN</p><h2>本学期选课进度</h2></div><button class="text-button" data-go-page="register">编辑课表 <span>→</span></button></div>
+              <div class="progress-summary"><div class="progress-ring" id="progress-ring"><div><strong id="progress-value">0%</strong><small>已完成</small></div></div><div class="progress-copy"><strong id="progress-title">还未开始选课</strong><p id="progress-description">选择主选课程和备选课程，保存后可继续编辑。</p><div class="progress-legend"><span><i class="legend-blue"></i>主选课</span><span><i class="legend-muted"></i>备选课</span></div></div></div>
+              <div class="choice-counts"><div><span class="choice-count-label"><i class="legend-blue"></i>主选课程</span><strong><b id="primary-count">0</b> <small>/ 4</small></strong></div><div><span class="choice-count-label"><i class="legend-muted"></i>备选课程</span><strong><b id="alternate-count">0</b> <small>/ 2</small></strong></div></div>
+            </article>
+            <article class="card action-card"><div class="card-heading"><div><p class="eyebrow">QUICK ACTION</p><h2>常用功能</h2></div></div><button class="action-row" data-go-page="register"><span class="action-icon action-icon-blue">＋</span><span><strong>选择课程</strong><small>浏览本学期开设的课程</small></span><b>→</b></button><button class="action-row" data-go-page="schedule"><span class="action-icon action-icon-purple">▦</span><span><strong>查看我的课表</strong><small>查看已保存和已注册课程</small></span><b>→</b></button><button class="action-row" data-go-page="transcript"><span class="action-icon action-icon-green">▤</span><span><strong>查看成绩单</strong><small>回顾已完成学期的成绩</small></span><b>→</b></button></article>
+          </div>
+          <article class="card recent-card"><div class="card-heading"><div><p class="eyebrow">RECENT COURSES</p><h2>当前课表预览</h2></div><button class="text-button" data-go-page="schedule">查看全部 <span>→</span></button></div><div class="mini-course-list" id="home-course-list"></div></article>
+        </section>
+
+        <section class="page-section" id="page-register">
+          <div class="page-intro register-intro"><div><p class="eyebrow">COURSE SELECTION</p><h1>选择你的课程</h1><p class="intro-copy">挑选 4 门主选课程和 2 门备选课程，系统会检查先修要求和时间冲突。</p></div><div class="selection-total"><strong id="selection-total">0 <small>/ 6</small></strong><span>已选择课程</span></div></div>
+          <div class="register-layout">
+            <div class="register-main">
+              <div class="catalog-toolbar"><div class="search-box"><span>⌕</span><input id="course-search" type="search" placeholder="搜索课程名称或编号"></div><select id="department-filter" aria-label="筛选院系"><option value="">全部院系</option></select><button class="filter-button" id="clear-filters">重置</button></div>
+              <div class="catalog-summary"><span><b id="catalog-course-count">0</b> 门课程</span><span class="catalog-source"><i></i>来自课程目录</span></div>
+              <div class="course-grid" id="course-list"></div>
+              <div class="no-courses" id="no-courses" hidden>没有找到符合条件的课程，请调整筛选条件。</div>
+            </div>
+            <aside class="selection-panel card">
+              <div class="card-heading"><div><p class="eyebrow">YOUR SELECTION</p><h2>我的选课单</h2></div><span class="draft-badge" id="draft-badge">草稿</span></div>
+              <div class="slot-group"><div class="slot-heading"><span><i class="legend-blue"></i>主选课程</span><span id="primary-slots-label">0 / 4</span></div><div class="selected-slots" id="primary-slots"></div></div>
+              <div class="slot-group"><div class="slot-heading"><span><i class="legend-muted"></i>备选课程</span><span id="alternate-slots-label">0 / 2</span></div><div class="selected-slots" id="alternate-slots"></div></div>
+              <div class="selection-notice"><span>i</span><p>提交前请确认课程时间与先修要求。备选课程不会立即计入已注册课程。</p></div>
+              <button class="button button-secondary full-button" id="save-draft">保存草稿</button>
+              <button class="button button-primary full-button" id="submit-schedule">提交课表 <span>→</span></button>
+              <p class="panel-hint" id="register-hint">可以先保存草稿，稍后再提交。</p>
+            </aside>
+          </div>
+        </section>
+
+        <section class="page-section" id="page-schedule">
+          <div class="page-intro"><div><p class="eyebrow">MY SCHEDULE</p><h1>我的课表</h1><p class="intro-copy">查看所选课程、注册状态与每周上课安排。</p></div><button class="button button-primary" data-go-page="register">编辑课表 <span>→</span></button></div>
+          <div class="schedule-banner" id="schedule-banner"><span class="schedule-banner-icon">▦</span><div><strong id="schedule-banner-title">课表状态</strong><p id="schedule-banner-copy">正在读取你的课表。</p></div><span class="schedule-status-tag" id="schedule-status-tag">—</span></div>
+          <div class="schedule-layout"><article class="card schedule-card"><div class="card-heading"><div><p class="eyebrow">WEEKLY PLAN</p><h2>课程安排</h2></div><span class="class-total" id="class-total">0 门课程</span></div><div class="schedule-table-wrap"><table class="schedule-table"><thead><tr><th>课程</th><th>上课时间</th><th>地点</th><th>状态</th></tr></thead><tbody id="schedule-rows"></tbody></table></div><div class="schedule-empty" id="schedule-empty" hidden><span>▦</span><strong>还没有已注册课程</strong><p>提交课表后，已注册课程会显示在这里。</p></div></article>
+            <aside class="card schedule-side"><p class="eyebrow">SCHEDULE SUMMARY</p><h2>选课摘要</h2><div class="summary-line"><span>主选课程</span><strong id="schedule-primary-count">0 / 4</strong></div><div class="summary-line"><span>备选课程</span><strong id="schedule-alternate-count">0 / 2</strong></div><div class="summary-line"><span>已注册学分</span><strong id="schedule-credit-count">0</strong></div><div class="schedule-side-actions"><button class="button button-secondary full-button" data-go-page="register">调整课程</button><button class="danger-button" id="delete-schedule">取消本学期课表</button></div><p class="panel-hint" id="schedule-edit-hint"></p></aside></div>
+        </section>
+
+        <section class="page-section" id="page-transcript">
+          <div class="page-intro"><div><p class="eyebrow">ACADEMIC RECORD</p><h1>成绩单</h1><p class="intro-copy">查看已完成学期的课程成绩。成绩信息仅对本人显示。</p></div><div class="transcript-total"><strong id="transcript-course-count">0</strong><span>条成绩记录</span></div></div>
+          <div class="transcript-hero"><span class="transcript-hero-icon">✦</span><div><p>学业记录</p><strong id="transcript-student-name">学生姓名</strong><small id="transcript-student-id">学号</small></div><div class="transcript-hero-right"><span>已完成课程</span><strong id="transcript-completed-count">0</strong></div></div>
+          <article class="card transcript-card"><div class="card-heading"><div><p class="eyebrow">COMPLETED COURSES</p><h2>历史成绩</h2></div><span class="grade-privacy">仅本人可见</span></div><div class="transcript-table-wrap"><table class="transcript-table"><thead><tr><th>学期</th><th>课程</th><th>课程编号</th><th>学分</th><th>成绩</th><th>授课教师</th></tr></thead><tbody id="transcript-rows"></tbody></table></div><div class="transcript-empty" id="transcript-empty" hidden><span>▤</span><strong>暂时没有成绩记录</strong><p>课程完成并录入成绩后，会显示在这里。</p></div></article>
+        </section>
+      </main>
+      <footer class="portal-footer"><span>课程注册系统 · 学生门户</span><span>课程信息由课程目录服务提供</span></footer>
+    </div>
+  </div>
+  <script src="/app.js" defer></script>
+</body>
+</html>
