@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>教师工作台 · 课程注册系统</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <section class="login-screen" id="login-screen">
+    <div class="login-art">
+      <div class="art-orb orb-one"></div><div class="art-orb orb-two"></div><div class="art-grid"></div>
+      <div class="art-copy">
+        <div class="brand-lockup"><span class="brand-mark">CR</span><span>COURSE REGISTRATION<small>FACULTY PORTAL</small></span></div>
+        <p class="art-kicker">TEACHING · ROSTER · GRADES</p>
+        <h1>让教学安排，<br><em>清晰有序。</em></h1>
+        <p class="art-description">选择下学期的授课课程，查看班级名册，<br>在学期结束后安全录入学生成绩。</p>
+        <div class="art-footer"><span class="art-line"></span>教师工作台 · 课程注册系统</div>
+      </div>
+      <div class="art-decoration"><span>01</span><span>02</span><span>03</span><i></i></div>
+    </div>
+    <div class="login-side">
+      <div class="login-form-wrap">
+        <span class="mobile-brand">CR <small>教师门户</small></span>
+        <p class="eyebrow">FACULTY ACCESS</p>
+        <h2>教师登录</h2>
+        <p class="login-subtitle">使用教师账号进入课程注册工作台。</p>
+        <form id="login-form" autocomplete="on">
+          <label for="username">用户名</label>
+          <div class="input-wrap"><span class="input-icon">⌁</span><input id="username" name="username" type="text" autocomplete="username" placeholder="例如 prof.chen" required></div>
+          <label for="password">密码</label>
+          <div class="input-wrap"><span class="input-icon">◌</span><input id="password" name="password" type="password" autocomplete="current-password" placeholder="请输入密码" required><button class="password-toggle" type="button" id="toggle-password">显示</button></div>
+          <button class="button button-primary login-button" type="submit" id="login-button">登录教师工作台 <span>→</span></button>
+          <p class="form-message" id="login-message" role="alert"></p>
+        </form>
+        <div class="demo-box">
+          <div class="demo-box-title"><span class="demo-spark">✦</span><strong>教师演示账号</strong><small>选择账号填入登录框</small></div>
+          <div class="demo-account-list">
+            <button class="demo-account" type="button" data-username="prof.chen" data-password="ProfessorDemo1!"><span class="avatar avatar-blue">陈</span><span><strong>陈梅雅教授</strong><small>prof.chen</small></span><span class="demo-use">填入 ↗</span></button>
+            <button class="demo-account" type="button" data-username="prof.ortega" data-password="ProfessorDemo2!"><span class="avatar avatar-violet">路</span><span><strong>路易斯·奥尔特加教授</strong><small>prof.ortega</small></span><span class="demo-use">填入 ↗</span></button>
+            <button class="demo-account" type="button" data-username="prof.wu" data-password="ProfessorDemo5!"><span class="avatar avatar-green">吴</span><span><strong>吴亨利教授</strong><small>prof.wu</small></span><span class="demo-use">填入 ↗</span></button>
+          </div>
+          <p class="demo-note">仅用于虚构演示数据。成绩功能需要该教师名下存在已结束学期的开课记录。</p>
+        </div>
+        <p class="login-foot">教师只能查看自己授课课程的学生名册和成绩。</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="portal" id="portal" hidden>
+    <aside class="sidebar">
+      <a class="side-brand" href="#home"><span class="brand-mark">CR</span><span>课程注册<small>教师工作台</small></span></a>
+      <div class="side-section-label">教学管理</div>
+      <nav class="side-nav" aria-label="教师功能导航">
+        <button class="nav-item active" data-page="home"><span class="nav-icon">⌂</span>工作概览</button>
+        <button class="nav-item" data-page="teaching"><span class="nav-icon">▦</span>授课选择</button>
+        <button class="nav-item" data-page="grades"><span class="nav-icon">✎</span>成绩录入</button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="help-card"><span class="help-icon">?</span><strong>教师权限说明</strong><p>名册与成绩只对该开课的授课教师开放。</p><span class="help-link">成绩范围 · 仅限本人授课班级</span></div>
+        <div class="side-user"><span class="avatar avatar-blue" id="sidebar-avatar">师</span><span class="side-user-text"><strong id="sidebar-name">教师</strong><small id="sidebar-id">教师编号</small></span><button class="logout-icon" id="logout-button" aria-label="退出登录" title="退出登录">↗</button></div>
+      </div>
+    </aside>
+
+    <div class="portal-main">
+      <header class="topbar">
+        <div class="breadcrumb"><span>教师门户</span><b>/</b><strong id="breadcrumb-title">工作概览</strong></div>
+        <div class="topbar-actions"><span class="connection-state"><i></i>已连接</span><label class="term-select-wrap"><span>授课学期</span><select id="semester-select" aria-label="选择授课学期"></select></label><button class="top-avatar" id="top-avatar" aria-label="当前教师">师</button></div>
+      </header>
+
+      <main class="workspace">
+        <div class="page-alert" id="page-alert" role="status" hidden></div>
+        <section class="page-section active" id="page-home">
+          <div class="page-intro"><div><p class="eyebrow" id="today-label">FACULTY WORKSPACE</p><h1>欢迎，<span id="welcome-name">老师</span><span class="wave">✦</span></h1><p class="intro-copy">查看授课安排、班级名册与成绩录入进度。</p></div><button class="button button-primary" data-go-page="teaching">管理授课课程 <span>→</span></button></div>
+          <div class="semester-banner"><div class="semester-mark">学期</div><div class="semester-text"><span>当前授课安排</span><strong id="home-semester-name">正在读取学期</strong><small id="registration-dates">—</small></div><div class="banner-status" id="registration-status">读取中</div><div class="banner-decoration">FACULTY<br><b>01</b></div></div>
+          <div class="metric-grid">
+            <article class="metric-card"><div class="metric-top"><span class="metric-icon metric-icon-blue">▦</span><span class="metric-caption">当前学期</span></div><strong id="metric-teaching-count">—</strong><span class="metric-title">已选授课班次</span><div class="metric-foot"><span id="metric-eligible-count">0 个符合资格</span></div></article>
+            <article class="metric-card"><div class="metric-top"><span class="metric-icon metric-icon-violet">◷</span><span class="metric-caption">课程安排</span></div><strong id="metric-weekly-slots">—</strong><span class="metric-title">每周授课时段</span><div class="metric-foot"><span>按授课班次汇总</span></div></article>
+            <article class="metric-card"><div class="metric-top"><span class="metric-icon metric-icon-green">✓</span><span class="metric-caption">历史教学</span></div><strong id="metric-grade-courses">—</strong><span class="metric-title">可录入成绩的课程</span><div class="metric-foot"><span id="metric-grade-pending">读取成绩名册</span></div></article>
+          </div>
+          <div class="home-grid">
+            <article class="card next-card"><div class="card-heading"><div><p class="eyebrow">TEACHING PLAN</p><h2>本学期授课安排</h2></div><button class="text-button" data-go-page="teaching">查看安排 <span>→</span></button></div><div class="course-preview-list" id="home-teaching-list"></div></article>
+            <article class="card action-card"><div class="card-heading"><div><p class="eyebrow">QUICK ACTION</p><h2>常用功能</h2></div></div><button class="action-row" data-go-page="teaching"><span class="action-icon action-icon-blue">▦</span><span><strong>选择授课课程</strong><small>查看资格课程并安排下学期授课</small></span><b>→</b></button><button class="action-row" data-go-page="grades"><span class="action-icon action-icon-green">✎</span><span><strong>录入学生成绩</strong><small>查看已结束学期的班级名册</small></span><b>→</b></button><div class="permission-note"><span>✓</span><p>学生名册和成绩接口会在服务器端校验教师与开课的归属关系。</p></div></article>
+          </div>
+        </section>
+
+        <section class="page-section" id="page-teaching">
+          <div class="page-intro"><div><p class="eyebrow">SELECT COURSES TO TEACH</p><h1>授课课程选择</h1><p class="intro-copy">选择你有资格讲授的开课。提交前系统会检查开课归属和时间冲突。</p></div><div class="selection-total"><strong id="selection-total">0</strong><span>已选授课班次</span></div></div>
+          <div class="selection-toolbar card"><div><strong id="teaching-period-title">授课安排</strong><p id="teaching-period-hint">选择当前学期后查看有资格讲授的课程。</p></div><span class="draft-badge" id="teaching-state-badge">只读</span></div>
+          <div class="course-grid" id="eligible-course-list"></div>
+          <div class="empty-state" id="no-eligible-courses" hidden><span>▦</span><strong>当前学期没有可选开课</strong><p>请切换学期，或联系教务员确认你的授课资格。</p></div>
+          <div class="selection-footer card"><p>已被其他教师选择的开课会标记为占用。授课选择只允许在注册开放期间修改。</p><button class="button button-primary" id="save-teaching">保存授课选择 <span>→</span></button></div>
+        </section>
+
+        <section class="page-section" id="page-grades">
+          <div class="page-intro"><div><p class="eyebrow">GRADE SUBMISSION</p><h1>成绩录入</h1><p class="intro-copy">选择已结束学期的授课课程，查看名册并录入或修改成绩。</p></div><div class="selection-total"><strong id="grade-course-total">0</strong><span>门可录入课程</span></div></div>
+          <div class="grade-layout">
+            <aside class="card grade-course-panel"><div class="card-heading"><div><p class="eyebrow">YOUR COURSES</p><h2>已结束课程</h2></div></div><div class="grade-course-list" id="grade-course-list"></div><div class="empty-state compact" id="no-grade-courses" hidden><span>✎</span><strong>暂时没有可录入课程</strong><p>该教师没有已结束学期的授课名册。</p></div></aside>
+            <article class="card roster-panel"><div class="roster-heading"><div><p class="eyebrow">CLASS ROSTER</p><h2 id="roster-title">选择一门课程</h2><p id="roster-subtitle">名册只包含当前教师所授课程的学生。</p></div><span class="roster-count" id="roster-count">—</span></div><div class="roster-table-wrap"><table class="roster-table"><thead><tr><th>学生</th><th>学号</th><th>注册状态</th><th>成绩</th></tr></thead><tbody id="roster-rows"></tbody></table></div><div class="roster-empty" id="roster-empty" hidden><span>⌁</span><strong>该班级暂时没有学生名册</strong><p>录入的成绩留空即可跳过该学生。</p></div><div class="roster-footer"><p>成绩范围：A、B、C、D、F、I。留空表示跳过，不会清除已有成绩。</p><button class="button button-primary" id="save-grades" disabled>保存成绩 <span>→</span></button></div></article>
+          </div>
+        </section>
+      </main>
+      <footer class="portal-footer"><span>课程注册系统 · 教师工作台</span><span>课程信息来自只读课程目录</span></footer>
+    </div>
+  </div>
+  <script src="/app.js" defer></script>
+</body>
+</html>
