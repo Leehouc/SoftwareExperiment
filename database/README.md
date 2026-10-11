@@ -47,7 +47,7 @@ python init_database.py --reset
 | `student_schedules` | 每名学生每学期一份课表 | 学期 ID、状态；学生和学期组合唯一 |
 | `schedule_choices` | 4 个主选与 2 个备选 | 主选顺序 1-4，备选顺序 1-2；每个开课 ID 在一份课表中最多出现一次 |
 | `professor_course_eligibility` | 教师可教授课程 | 教师 ID 与课程目录 course ID 的关联 |
-| `professor_offering_selections` | 教师选择/确认授课 | 记录教师 ID、外部开课 ID、学期和选择状态；一个开课只能由一个本地教师记录占用 |
+| `professor_offering_selections` | 当前授课归属 | 每个开课保留一条唯一记录；`SELECTED`、`CONFIRMED` 占用班次，`WITHDRAWN` 可被其他合格教师接手；变更历史保存在 `audit_logs.details_json` 的 `assignmentChanges` 中 |
 | `enrollments` | 学生实际注册记录 | 外部开课/课程 ID、注册状态，以及选课时的课程名称和学分快照 |
 | `course_grades` | 教师成绩 | 成绩限定 A/B/C/D/F/I；数据库触发器检查该教师是否被分配到对应开课 |
 | `billing_transactions` | 发往账单系统的事务队列 | 金额用整数分保存；幂等键唯一，支持失败重试 |

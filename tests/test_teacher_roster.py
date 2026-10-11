@@ -8,7 +8,7 @@ from teacher import server
 from tests.test_student_registration_closed import StudentScheduleTestCase
 
 
-class TeacherRosterTests(StudentScheduleTestCase):
+class TeacherRosterTestCase(StudentScheduleTestCase):
     def setUp(self):
         super().setUp()
         self.catalog["semesters"][0].update(
@@ -44,6 +44,8 @@ class TeacherRosterTests(StudentScheduleTestCase):
         self.assertEqual(error.exception.status, status)
         self.assertEqual(list(self.db.iterdump()), before)
 
+
+class TeacherRosterTests(TeacherRosterTestCase):
     def test_current_term_roster_is_visible_even_after_registration_closes(self):
         self.assertEqual(self.db.execute("SELECT registration_status FROM registration_periods").fetchone()[0], "CLOSED")
         before = list(self.db.iterdump())

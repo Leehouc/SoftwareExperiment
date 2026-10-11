@@ -216,7 +216,7 @@ def _selection_state(
     suffix = " FOR UPDATE" if lock else ""
     return _query_all(
         connection,
-        "SELECT professor_id, offering_id, semester_id, selection_status "
+        "SELECT professor_id, offering_id, semester_id, selection_status, selected_at "
         "FROM professor_offering_selections WHERE semester_id = %s "
         "ORDER BY offering_id" + suffix,
         (semester_id,),
@@ -335,7 +335,7 @@ def _build_teacher_data(professor_id: str, requested_semester: str | None) -> di
                     **offering,
                     "course": catalog_courses.get(str(offering.get("courseId")), {}),
                     "selected": owned_by_me and active,
-                    "reservedByOther": bool(assignment and owner != professor_id),
+                    "reservedByOther": active and owner != professor_id,
                     "assignmentStatus": assignment["selection_status"] if assignment else None,
                 }
             )
@@ -432,28 +432,45 @@ def _save_teaching_selection(
         assignment_by_offering = {str(row["offering_id"]): row for row in locked_rows}
         for offering_id in sorted(offering_ids):
             row = assignment_by_offering.get(offering_id)
-            if row and str(row["professor_id"]) != professor_id:
+            if (
+                row and row["selection_status"] in ACTIVE_ASSIGNMENT_STATES
+                and str(row["professor_id"]) != professor_id
+            ):
                 issues.append(f"开课 {offering_id} 已由其他教师占用，不能修改。")
         if issues:
             raise ApiError("授课课程校验未通过，请调整选择。", 422, issues)
 
         cursor = connection.cursor()
         try:
-            cursor.execute(
-                "UPDATE professor_offering_selections SET selection_status = 'WITHDRAWN' "
-                "WHERE professor_id = %s AND semester_id = %s "
-                "AND selection_status IN ('SELECTED', 'CONFIRMED')",
-                (professor_id, semester_id),
-            )
+            changed_ids = set()
+            requested_ids = set(offering_ids)
+            for row in locked_rows:
+                offering_id = str(row["offering_id"])
+                if (
+                    str(row["professor_id"]) == professor_id
+                    and row["selection_status"] in ACTIVE_ASSIGNMENT_STATES
+                    and offering_id not in requested_ids
+                ):
+                    cursor.execute(
+                        "UPDATE professor_offering_selections SET selection_status = 'WITHDRAWN' "
+                        "WHERE professor_id = %s AND offering_id = %s AND semester_id = %s",
+                        (professor_id, offering_id, semester_id),
+                    )
+                    changed_ids.add(offering_id)
             for offering_id in offering_ids:
                 row = assignment_by_offering.get(offering_id)
-                if row and str(row["professor_id"]) == professor_id:
+                if row:
+                    # 保留有效授课安排；撤回记录原位复用，避免 offering_id 唯一约束冲突。
+                    if row["selection_status"] in ACTIVE_ASSIGNMENT_STATES:
+                        continue
                     cursor.execute(
-                        "UPDATE professor_offering_selections SET selection_status = 'SELECTED', "
+                        "UPDATE professor_offering_selections SET professor_id = %s, selection_status = 'SELECTED', "
                         "selected_at = CURRENT_TIMESTAMP(3) WHERE professor_id = %s AND offering_id = %s "
+                        "AND semester_id = %s "
                         "AND selection_status = 'WITHDRAWN'",
-                        (professor_id, offering_id),
+                        (professor_id, row["professor_id"], offering_id, semester_id),
                     )
+                    changed_ids.add(offering_id)
                     continue
                 cursor.execute(
                     "INSERT INTO professor_offering_selections "
@@ -461,10 +478,36 @@ def _save_teaching_selection(
                     "VALUES (%s, %s, %s, 'SELECTED')",
                     (professor_id, offering_id, semester_id),
                 )
+                changed_ids.add(offering_id)
+
+            current_rows = _selection_state(connection, professor_id, semester_id)
+            current_by_offering = {str(row["offering_id"]): row for row in current_rows}
+
+            def assignment_snapshot(row: dict[str, Any] | None) -> dict[str, Any] | None:
+                if row is None:
+                    return None
+                return {
+                    "professorId": str(row["professor_id"]),
+                    "semesterId": str(row["semester_id"]),
+                    "selectionStatus": row["selection_status"],
+                    "selectedAt": str(row["selected_at"]),
+                }
+
+            changes = [
+                {
+                    "offeringId": offering_id,
+                    "before": assignment_snapshot(assignment_by_offering.get(offering_id)),
+                    "after": assignment_snapshot(current_by_offering.get(offering_id)),
+                }
+                for offering_id in sorted(changed_ids)
+            ]
             cursor.execute(
                 "INSERT INTO audit_logs (actor_user_id, action, entity_type, entity_id, details_json) "
                 "VALUES (%s, 'UPDATE_TEACHING_SELECTION', 'PROFESSOR_SCHEDULE', %s, %s)",
-                (user_id, semester_id, json.dumps({"offeringIds": offering_ids}, ensure_ascii=False)),
+                (user_id, semester_id, json.dumps(
+                    {"professorId": professor_id, "offeringIds": offering_ids, "assignmentChanges": changes},
+                    ensure_ascii=False,
+                )),
             )
         finally:
             cursor.close()

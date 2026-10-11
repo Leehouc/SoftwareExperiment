@@ -37,7 +37,7 @@ function portal(canEditGrades) {
   vm.runInContext(source.slice(0, bindings) + `
     request = mockRequest;
     renderAll = () => {};
-    globalThis.portal = { state, loadData, renderGradeCourses, renderRoster, saveGrades };
+    globalThis.portal = { state, loadData, renderGradeCourses, renderRoster, saveGrades, renderTeachingSelection };
   `, context);
   context.portal.state.data = data;
   context.portal.state.rosterData = rosterData;
@@ -81,4 +81,35 @@ test("可录成绩但没有学生的班级不能保存成绩", () => {
   api.renderRoster();
   assert.equal(nodes.get("save-grades").disabled, true);
   assert.equal(nodes.get("roster-empty").hidden, false);
+});
+
+test("撤回班次可选择接手，其他教师有效授课班次仍禁用", () => {
+  const { api, nodes } = portal(false);
+  api.state.data.canEditTeaching = true;
+  api.state.data.catalog = { departments: [], faculty: [] };
+  api.state.data.eligibleOfferings = [
+    { offeringId: "RELEASED", courseId: "C1", course: {}, status: "OPEN",
+      assignmentStatus: "WITHDRAWN", reservedByOther: false },
+    { offeringId: "OCCUPIED", courseId: "C2", course: {}, status: "OPEN",
+      assignmentStatus: "CONFIRMED", reservedByOther: true },
+  ];
+  api.renderTeachingSelection();
+  const html = nodes.get("eligible-course-list").innerHTML;
+  const released = html.match(/<button[^>]*data-offering-id="RELEASED"[^>]*>/)[0];
+  const occupied = html.match(/<button[^>]*data-offering-id="OCCUPIED"[^>]*>/)[0];
+  assert.doesNotMatch(released, /\bdisabled\b/);
+  assert.match(occupied, /\bdisabled\b/);
+});
+
+test("注册关闭后撤回班次仍只能查看", () => {
+  const { api, nodes } = portal(false);
+  api.state.data.canEditTeaching = false;
+  api.state.data.catalog = { departments: [], faculty: [] };
+  api.state.data.eligibleOfferings = [{
+    offeringId: "RELEASED", courseId: "C1", course: {}, status: "OPEN",
+    assignmentStatus: "WITHDRAWN", reservedByOther: false,
+  }];
+  api.renderTeachingSelection();
+  assert.match(nodes.get("eligible-course-list").innerHTML, /<button[^>]*data-offering-id="RELEASED"[^>]*\bdisabled\b/);
+  assert.equal(nodes.get("save-teaching").disabled, true);
 });
