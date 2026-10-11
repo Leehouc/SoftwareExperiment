@@ -160,19 +160,22 @@ def _get_period(connection: Any, semester_id: str, lock: bool = False) -> dict[s
     )
 
 
-def _edit_mode(period: dict[str, Any] | None, previously_submitted: bool) -> str:
+def _assert_registration_open(period: dict[str, Any] | None) -> None:
     if period is None:
         raise ApiError("该学期尚未配置注册时间。", 409)
+    if str(period["registration_status"]).upper() != "OPEN":
+        raise ApiError("该学期注册已关闭，不能保存、提交或删除课表。", 409)
+
+
+def _edit_mode(period: dict[str, Any] | None, previously_submitted: bool) -> str:
+    _assert_registration_open(period)
     today = date.today()
     add_drop_open = _inside_window(today, period["add_drop_start_at"], period["add_drop_end_at"])
     if previously_submitted:
         if add_drop_open:
             return "add_drop"
         raise ApiError("已提交课表只能在加退选期间修改。", 409)
-    initial_window_open = (
-        str(period["registration_status"]).upper() == "OPEN"
-        and _inside_window(today, period["registration_start_at"], period["registration_end_at"])
-    )
+    initial_window_open = _inside_window(today, period["registration_start_at"], period["registration_end_at"])
     if initial_window_open:
         return "registration"
     if add_drop_open:
@@ -533,13 +536,13 @@ def _build_student_data(student_id: str, requested_semester: str | None) -> dict
         if str(item.get("semesterId")) in period_by_id
     ]
     today = date.today()
+    period_open = bool(period and str(period["registration_status"]).upper() == "OPEN")
     registration_open = bool(
-        period
-        and str(period["registration_status"]).upper() == "OPEN"
+        period_open
         and _inside_window(today, period["registration_start_at"], period["registration_end_at"])
     )
     add_drop_open = bool(
-        period and _inside_window(today, period["add_drop_start_at"], period["add_drop_end_at"])
+        period_open and _inside_window(today, period["add_drop_start_at"], period["add_drop_end_at"])
     )
     previously_submitted = bool(
         schedule
@@ -548,7 +551,12 @@ def _build_student_data(student_id: str, requested_semester: str | None) -> dict
             or bool(enrollments)
         )
     )
-    can_edit = add_drop_open if previously_submitted else (registration_open or add_drop_open)
+    # 页面权限与保存、提交、删除使用同一套状态和时间规则。
+    try:
+        _edit_mode(period, previously_submitted)
+        can_edit = True
+    except ApiError:
+        can_edit = False
     return {
         "student": student,
         "semesterId": semester_id,
@@ -756,10 +764,12 @@ class StudentHandler(BaseHTTPRequestHandler):
         catalog: dict[str, Any],
     ) -> None:
         with transaction() as connection:
+            # 与关闭注册按同一顺序锁定注册期，避免关闭后的请求沿用旧状态。
+            period = _get_period(connection, semester_id, lock=True)
+            _assert_registration_open(period)
             schedule = _get_or_create_schedule(connection, student_id, semester_id)
             schedule_id = int(schedule["schedule_id"])
             previously_submitted = _schedule_has_enrollments(connection, schedule_id)
-            period = _get_period(connection, semester_id)
             mode = _edit_mode(period, previously_submitted)
 
             if not submit:
@@ -843,6 +853,8 @@ class StudentHandler(BaseHTTPRequestHandler):
 
     def _delete_schedule(self, user_id: str, student_id: str, semester_id: str) -> None:
         with transaction() as connection:
+            period = _get_period(connection, semester_id, lock=True)
+            _assert_registration_open(period)
             schedule = _query_one(
                 connection,
                 "SELECT schedule_id FROM student_schedules "
@@ -853,7 +865,6 @@ class StudentHandler(BaseHTTPRequestHandler):
                 raise ApiError("当前学期还没有课表。", 404)
             schedule_id = int(schedule["schedule_id"])
             submitted = _schedule_has_enrollments(connection, schedule_id)
-            period = _get_period(connection, semester_id)
             _edit_mode(period, submitted)
             cursor = connection.cursor()
             try:

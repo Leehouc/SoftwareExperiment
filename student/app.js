@@ -150,6 +150,9 @@ async function loadData(semesterId = "") {
 
 function registrationLabel() {
   if (!state.data?.period) return { text: "未配置注册期", closed: true };
+  if (String(state.data.period.registration_status).toUpperCase() !== "OPEN") {
+    return { text: "注册已关闭", closed: true };
+  }
   if (state.data.schedule?.status === "CANCELLED") return { text: "课表已取消", closed: true };
   if (state.data.previouslySubmitted) {
     return state.data.addDropOpen ? { text: "加退选开放", closed: false } : { text: "课表已提交", closed: true };
@@ -260,7 +263,7 @@ function renderSlots(containerId, values, kind, total) {
   const entries = values.map((id, index) => {
     const offering = offerById(id) || {};
     const course = courseById(offering.courseId) || {};
-    return `<div class="selected-slot ${className}"><span class="slot-index">${index + 1}</span><span class="selected-slot-text"><strong>${escapeHtml(course.title || offering.courseId || id)}</strong><small>${escapeHtml(offering.courseId || id)}</small></span><button class="remove-slot" type="button" data-remove-kind="${kind}" data-remove-id="${escapeHtml(id)}" aria-label="移除课程">×</button></div>`;
+    return `<div class="selected-slot ${className}"><span class="slot-index">${index + 1}</span><span class="selected-slot-text"><strong>${escapeHtml(course.title || offering.courseId || id)}</strong><small>${escapeHtml(offering.courseId || id)}</small></span><button class="remove-slot" type="button" data-remove-kind="${kind}" data-remove-id="${escapeHtml(id)}" aria-label="移除课程" ${!state.data?.canEdit ? "disabled" : ""}>×</button></div>`;
   });
   for (let index = values.length; index < total; index += 1) {
     entries.push(`<div class="slot-empty">${kind === "primary" ? "选择主选课程" : "选择备选课程"} · ${index + 1}</div>`);
@@ -311,14 +314,15 @@ function renderCourseCatalog() {
     const seatLabel = statusFull || (isOpen && capacity > 0 && seats <= 0)
       ? "当前已满"
       : (!isOpen ? "当前未开放" : `余 ${seats} 个名额`);
-    const cannotPick = !state.data.canEdit || full;
+    const primaryDisabled = !state.data.canEdit || (full && !isPrimary);
+    const alternateDisabled = !state.data.canEdit || (full && !isAlternate);
     const days = (offering.days || []).map(dayName).join(" / ");
     return `<article class="course-card ${selectedClass}">
       <div class="course-card-top"><span class="course-dept">${escapeHtml(departments[course.departmentId] || course.departmentId || "课程")}</span><span class="course-code">${escapeHtml(offering.courseId)} · ${escapeHtml(offering.section || "01")}</span></div>
       <h3 title="${escapeHtml(course.title || offering.courseId)}">${escapeHtml(course.title || offering.courseId)}</h3>
       <p class="course-card-description">${escapeHtml(course.description || "课程目录提供的开课信息。")}</p>
       <div class="course-facts"><span><b>教师</b>${escapeHtml(faculty[offering.facultyId] || offering.facultyId || "待安排")}</span><span><b>学分</b>${escapeHtml(course.credits || 0)}</span><span><b>时间</b>${escapeHtml(days)} ${escapeHtml(offering.startTime || "")}</span><span><b>地点</b>${escapeHtml(offering.room || "待定")}</span></div>
-      <div class="course-card-bottom"><span class="seat-text ${full ? "full" : ""}">${escapeHtml(seatLabel)}</span><div class="course-actions"><button class="course-pick ${isPrimary ? "active-primary" : ""}" type="button" data-pick-kind="primary" data-offering-id="${escapeHtml(offering.offeringId)}" ${cannotPick && !isPrimary ? "disabled" : ""}>${isPrimary ? "主选 ✓" : "设为主选"}</button><button class="course-pick ${isAlternate ? "active-alternate" : ""}" type="button" data-pick-kind="alternate" data-offering-id="${escapeHtml(offering.offeringId)}" ${cannotPick && !isAlternate ? "disabled" : ""}>${isAlternate ? "备选 ✓" : "设为备选"}</button></div></div>
+      <div class="course-card-bottom"><span class="seat-text ${full ? "full" : ""}">${escapeHtml(seatLabel)}</span><div class="course-actions"><button class="course-pick ${isPrimary ? "active-primary" : ""}" type="button" data-pick-kind="primary" data-offering-id="${escapeHtml(offering.offeringId)}" ${primaryDisabled ? "disabled" : ""}>${isPrimary ? "主选 ✓" : "设为主选"}</button><button class="course-pick ${isAlternate ? "active-alternate" : ""}" type="button" data-pick-kind="alternate" data-offering-id="${escapeHtml(offering.offeringId)}" ${alternateDisabled ? "disabled" : ""}>${isAlternate ? "备选 ✓" : "设为备选"}</button></div></div>
     </article>`;
   }).join("");
   document.getElementById("selection-total").innerHTML = `${state.primary.length + state.alternate.length} <small>/ 6</small>`;
@@ -387,6 +391,7 @@ function renderAll() {
 }
 
 function toggleSelection(kind, offeringId) {
+  if (!state.data?.canEdit) return;
   const own = kind === "primary" ? state.primary : state.alternate;
   const other = kind === "primary" ? state.alternate : state.primary;
   const index = own.indexOf(offeringId);
