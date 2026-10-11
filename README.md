@@ -2,7 +2,7 @@
 
 本项目包含两部分：**遗留课程目录只读服务**和**课程注册新系统的业务数据库基础**。课程目录由虚拟 JSON 数据模拟；新系统的学生、教师、选课、成绩和账单等业务数据可使用 SQLite 本地演示，也可迁移到 MySQL。
 
-> `app.py` 与 `dashboard.py` 提供课程目录 API 和浏览页面。`student/` 是独立的学生课程注册网页，连接 MySQL 并读取课程目录 API；教师和教务员网页尚未实现。
+> `app.py` 与 `dashboard.py` 提供课程目录 API 和浏览页面。`student/` 和 `teacher/` 分别是独立的学生、教师网页模块，连接 MySQL 并读取课程目录 API；教务员网页尚未实现。
 
 ## 文件与目录说明
 
@@ -11,6 +11,7 @@
 | `app.py` | 遗留课程目录只读 HTTP/JSON 服务。默认从 `data/catalog.json` 读取虚拟数据；可选配置为连接 Ingres。只支持 GET，不修改课程目录。默认监听 `127.0.0.1:8000`。 |
 | `dashboard.py` | 课程目录浏览网页，并将请求转发给 `app.py`。默认监听 `127.0.0.1:8001`，因此必须先启动 `app.py`。 |
 | `student/` | 独立的学生注册可视化网页及后端 API。支持学生登录、选择/保存/提交课表、加退选期修改和查看成绩单；默认监听 `127.0.0.1:8020`。启动前须先启动 MySQL 和 `app.py`。 |
+| `teacher/` | 独立的教师工作台及后端 API。支持教师登录、选择授课课程、查看本人班级名册和录入成绩；默认监听 `127.0.0.1:8030`。启动前须先启动 MySQL 和 `app.py`。 |
 | `newdatabaseTest1.0/` | MySQL 数据库只读检查网页，可查看表记录数和演示数据预览。 |
 | `data/catalog.json` | 虚拟课程目录数据，包括院系、教师、学期、课程、先修关系和开课。用于没有真实 Ingres 数据库时开发和演示。 |
 | `init_database.py` | 创建并填充本地 SQLite 业务数据库；虚构学生、教师、教务员、选课、成绩等演示数据在此初始化。 |
@@ -137,6 +138,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\student\start.ps1
 ```
 
 输入 MySQL 应用账号密码后，打开 <http://127.0.0.1:8020>。演示账号为 `student.lin` / `StudentDemo1!` 和 `student.chen` / `StudentDemo2!`。学生网页详细说明见 [student/README.md](student/README.md)。
+
+### 6. 启动教师工作台
+
+保持 MySQL 和课程目录 API 运行，在另一个 PowerShell 终端运行：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\teacher\start.ps1
+```
+
+输入 MySQL 应用账号密码后，打开 <http://127.0.0.1:8030>。演示账号包括 `prof.chen` / `ProfessorDemo1!`、`prof.ortega` / `ProfessorDemo2!` 和 `prof.wu` / `ProfessorDemo5!`。教师网页详细说明见 [teacher/README.md](teacher/README.md)。
 
 ## 课程目录 API
 
