@@ -107,6 +107,56 @@ class StudentAddDropTests(StudentScheduleTestCase):
         self.submit(["O1", "O5"], [])
         self.assertEqual(self.enrollment("O2")["enrollment_status"], "DROPPED")
 
+    def test_repeated_draft_saves_keep_registered_markers_in_both_groups(self):
+        before = [dict(row) for row in self.db.execute("SELECT * FROM enrollments")]
+        for primary, alternate in ((["O1", "O5"], ["O2", "O6"]),
+                                   (["O2", "O5"], ["O1", "O6"]),
+                                   (["O1", "O5"], ["O2", "O6"])):
+            with self.subTest(primary=primary, alternate=alternate):
+                self.handler._save_or_submit(False, "S", "S", "TERM", primary, alternate, self.catalog)
+                rows = [tuple(row) for row in self.db.execute(
+                    "SELECT offering_id, choice_type, preference_order, selection_status "
+                    "FROM schedule_choices ORDER BY choice_type DESC, preference_order",
+                )]
+                self.assertEqual(rows, [
+                    (offering_id, kind, order, "ENROLLED" if offering_id in {"O1", "O2"} else "SELECTED")
+                    for kind, ids in (("PRIMARY", primary), ("ALTERNATE", alternate))
+                    for order, offering_id in enumerate(ids, start=1)
+                ])
+                self.assertEqual([dict(row) for row in self.db.execute("SELECT * FROM enrollments")], before)
+                self.assertEqual(self.db.execute("SELECT status FROM student_schedules").fetchone()[0], "DRAFT")
+                choices = {row["offering_id"]: row["selection_status"] for row in self.student_data()["choices"]}
+                self.assertEqual(choices, {"O1": "ENROLLED", "O2": "ENROLLED", "O5": "SELECTED", "O6": "SELECTED"})
+
+        # 只有提交变更才退掉移到备选的课程，新增主选才真正注册。
+        self.submit(["O1", "O5"], ["O2", "O6"])
+        self.assertEqual(self.enrollment("O1")["enrollment_status"], "ENROLLED")
+        self.assertEqual(self.enrollment("O5")["enrollment_status"], "ENROLLED")
+        self.assertEqual(self.enrollment("O2")["enrollment_status"], "DROPPED")
+        self.assertEqual({row[0]: row[1] for row in self.db.execute(
+            "SELECT offering_id, selection_status FROM schedule_choices",
+        )}, {"O1": "ENROLLED", "O5": "ENROLLED", "O2": "SELECTED", "O6": "SELECTED"})
+
+    def test_draft_registration_markers_follow_active_enrollments_not_old_choices(self):
+        self.db.execute("UPDATE enrollments SET enrollment_status = 'DROPPED' WHERE offering_id = 'O2'")
+        self.db.execute("UPDATE enrollments SET enrollment_status = 'CANCELLED' WHERE offering_id = 'O3'")
+        self.db.execute("UPDATE enrollments SET enrollment_status = 'COMPLETED' WHERE offering_id = 'O4'")
+        self.db.execute("UPDATE schedule_choices SET selection_status = 'SELECTED' WHERE offering_id = 'O1'")
+        before = [dict(row) for row in self.db.execute("SELECT * FROM enrollments")]
+        self.handler._save_or_submit(False, "S", "S", "TERM", ["O1", "O2"], ["O3", "O4"], self.catalog)
+        self.assertEqual({row[0]: row[1] for row in self.db.execute(
+            "SELECT offering_id, selection_status FROM schedule_choices",
+        )}, {"O1": "ENROLLED", "O2": "SELECTED", "O3": "SELECTED", "O4": "SELECTED"})
+        self.assertEqual([dict(row) for row in self.db.execute("SELECT * FROM enrollments")], before)
+
+    def test_initial_draft_has_only_selected_markers(self):
+        self.db.execute("DELETE FROM enrollments")
+        self.handler._save_or_submit(False, "S", "S", "TERM", ["O1", "O2"], ["O5"], self.catalog)
+        self.assertEqual({row[0]: row[1] for row in self.db.execute(
+            "SELECT offering_id, selection_status FROM schedule_choices",
+        )}, {"O1": "SELECTED", "O2": "SELECTED", "O5": "SELECTED"})
+        self.assertEqual(self.db.execute("SELECT COUNT(*) FROM enrollments").fetchone()[0], 0)
+
     def test_first_submission_still_requires_four_plus_two_even_in_add_drop_window(self):
         self.db.execute("DELETE FROM enrollments")
         self.db.execute("UPDATE student_schedules SET status = 'DRAFT'")

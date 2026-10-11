@@ -227,8 +227,10 @@ def _write_choices(
     schedule_id: int,
     primary: list[str],
     alternate: list[str],
-    enrolled_ids: set[str] | None = None,
+    *,
+    enrolled_ids: set[str],
 ) -> None:
+    """按实际注册集合标记志愿；草稿调整分组本身不改变注册状态。"""
     cursor = connection.cursor()
     try:
         cursor.execute("DELETE FROM schedule_choices WHERE schedule_id = %s", (schedule_id,))
@@ -238,12 +240,18 @@ def _write_choices(
                 offering_id,
                 "PRIMARY",
                 order,
-                "ENROLLED" if enrolled_ids and offering_id in enrolled_ids else "SELECTED",
+                "ENROLLED" if offering_id in enrolled_ids else "SELECTED",
             )
             for order, offering_id in enumerate(primary, start=1)
         ]
         rows.extend(
-            (schedule_id, offering_id, "ALTERNATE", order, "SELECTED")
+            (
+                schedule_id,
+                offering_id,
+                "ALTERNATE",
+                order,
+                "ENROLLED" if offering_id in enrolled_ids else "SELECTED",
+            )
             for order, offering_id in enumerate(alternate, start=1)
         )
         if rows:
@@ -797,7 +805,9 @@ class StudentHandler(BaseHTTPRequestHandler):
             current_enrolled_ids = {str(row["offering_id"]) for row in enrolled_rows}
 
             if not submit:
-                _write_choices(connection, schedule_id, primary, alternate, current_enrolled_ids)
+                _write_choices(
+                    connection, schedule_id, primary, alternate, enrolled_ids=current_enrolled_ids,
+                )
                 cursor = connection.cursor()
                 try:
                     cursor.execute(
@@ -823,7 +833,7 @@ class StudentHandler(BaseHTTPRequestHandler):
                 raise ApiError("课表校验未通过，请根据提示调整。", 422, issues)
 
             enrolled_ids = set(primary)
-            _write_choices(connection, schedule_id, primary, alternate, enrolled_ids)
+            _write_choices(connection, schedule_id, primary, alternate, enrolled_ids=enrolled_ids)
             cursor = connection.cursor(dictionary=True)
             try:
                 drop_sql = (
