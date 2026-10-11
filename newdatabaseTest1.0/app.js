@@ -4,6 +4,50 @@ const tableList = document.getElementById("table-list");
 const tableSelect = document.getElementById("table-select");
 const errorBanner = document.getElementById("error-banner");
 const errorMessage = document.getElementById("error-message");
+let csrfToken = "";
+let authVersion = 0;
+
+function showLogin(message = "") {
+  authVersion += 1;
+  csrfToken = "";
+  document.getElementById("inspection-panel").hidden = true;
+  document.getElementById("login-panel").hidden = false;
+  document.getElementById("password").value = "";
+  document.getElementById("login-message").textContent = message;
+  tableList.replaceChildren();
+  tableSelect.replaceChildren();
+  tableSelect.disabled = true;
+  document.getElementById("preview-head").replaceChildren();
+  document.getElementById("preview-body").replaceChildren();
+  for (const id of ["database-name", "server-version", "detail-database", "detail-user", "table-total", "record-total", "last-updated", "preview-meta"]) {
+    document.getElementById(id).textContent = "—";
+  }
+}
+
+async function api(path, body) {
+  const version = authVersion;
+  const headers = { Accept: "application/json" };
+  const options = { cache: "no-store", credentials: "same-origin", headers };
+  if (body !== undefined) {
+    options.method = "POST";
+    options.body = JSON.stringify(body);
+    headers["Content-Type"] = "application/json";
+    if (path !== "/api/login") headers["X-CSRF-Token"] = csrfToken;
+  }
+  const response = await fetch(path, options);
+  const result = await response.json();
+  if (version !== authVersion) throw new Error("登录状态已改变，请重新加载数据。");
+  if (response.status === 401 && path !== "/api/login") showLogin(result.error);
+  if (!response.ok) throw new Error(result.error || "请求失败。");
+  return result;
+}
+
+async function enterInspection(csrf) {
+  csrfToken = csrf;
+  document.getElementById("login-panel").hidden = true;
+  document.getElementById("inspection-panel").hidden = false;
+  await loadStatus();
+}
 
 function showError(message) {
   errorMessage.textContent = message || "请确认 MySQL 正在运行，并检查 MYSQL_* 连接配置。";
@@ -28,9 +72,8 @@ async function loadStatus() {
   clearError();
 
   try {
-    const response = await fetch("/api/status", { cache: "no-store" });
-    const result = await response.json();
-    if (!response.ok || !result.ok) throw new Error(result.error || "数据库连接失败。");
+    const result = await api("/api/status");
+    if (!result.ok) throw new Error(result.error || "数据库连接失败。");
 
     statusPill.dataset.state = "ok";
     connectionLabel.textContent = "数据库连接正常";
@@ -93,9 +136,8 @@ async function loadPreview(tableName) {
   previewMeta.textContent = "正在读取…";
 
   try {
-    const response = await fetch(`/api/preview?table=${encodeURIComponent(tableName)}`, { cache: "no-store" });
-    const result = await response.json();
-    if (!response.ok || !result.ok) throw new Error(result.error || "读取数据失败。");
+    const result = await api(`/api/preview?table=${encodeURIComponent(tableName)}`);
+    if (!result.ok) throw new Error(result.error || "读取数据失败。");
 
     previewHead.replaceChildren();
     const headerRow = document.createElement("tr");
@@ -140,4 +182,28 @@ async function loadPreview(tableName) {
 
 document.getElementById("refresh-button").addEventListener("click", loadStatus);
 tableSelect.addEventListener("change", () => loadPreview(tableSelect.value));
-loadStatus();
+document.getElementById("login-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const button = document.getElementById("login-button");
+  button.disabled = true;
+  document.getElementById("login-message").textContent = "";
+  try {
+    const result = await api("/api/login", { username: document.getElementById("username").value,
+      password: document.getElementById("password").value });
+    document.getElementById("password").value = "";
+    await enterInspection(result.csrfToken);
+  } catch (error) {
+    document.getElementById("login-message").textContent = error.message;
+  } finally { button.disabled = false; }
+});
+document.getElementById("logout-button").addEventListener("click", async () => {
+  try { await api("/api/logout", {}); }
+  catch { /* 无论服务端会话是否已撤销，都清除本地预览。 */ }
+  showLogin();
+});
+(async () => {
+  try {
+    const session = await api("/api/session");
+    if (session.authenticated) await enterInspection(session.csrfToken);
+  } catch (error) { showLogin(error.message); }
+})();

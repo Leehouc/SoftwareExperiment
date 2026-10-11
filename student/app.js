@@ -38,6 +38,7 @@ function escapeHtml(value) {
 }
 
 async function request(path, options = {}) {
+  const user = state.user;
   const method = options.method || "GET";
   const headers = { Accept: "application/json" };
   const init = { method, headers, credentials: "same-origin", cache: "no-store" };
@@ -50,7 +51,12 @@ async function request(path, options = {}) {
   let payload;
   try { payload = await response.json(); }
   catch { throw new RequestError("服务器返回了无法识别的数据。"); }
+  if (response.status === 401 && path !== "/api/login" && user && user === state.user) {
+    clearLocalSession();
+    document.getElementById("login-message").textContent = payload.error || "登录状态已失效，请重新登录。";
+  }
   if (!response.ok) throw new RequestError(payload.error || "请求失败。", payload.issues || []);
+  if (user && user !== state.user) throw new RequestError("登录状态已改变，请重新加载数据。");
   return payload;
 }
 
@@ -659,12 +665,21 @@ async function logout() {
   state.transcriptLoading = false;
   try { await request("/api/logout", { method: "POST", body: {} }); }
   catch { /* 本地会话若已过期，仍清除网页状态并返回登录页。 */ }
+  clearLocalSession();
+}
+
+function clearLocalSession() {
+  stopAvailabilityRefresh();
+  state.transcriptVersion += 1;
+  state.transcriptLoading = false;
   state.user = null;
   state.data = null;
   state.csrfToken = "";
   state.primary = [];
   state.alternate = [];
   document.getElementById("password").value = "";
+  document.getElementById("transcript-rows").innerHTML = "";
+  document.getElementById("schedule-rows").innerHTML = "";
   setPortalVisible(false);
 }
 

@@ -11,6 +11,13 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
+.login-panel { width: min(440px, calc(100% - 32px)); margin: 12vh auto; padding: 30px; }
+.login-panel form { display: grid; gap: 10px; margin-top: 24px; }
+.login-panel label { color: var(--muted); font-size: 12px; }
+.login-panel input { width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 6px; font: inherit; }
+.login-panel input:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+#login-message { margin: 0; color: #9f4545; font-size: 12px; }
 body { margin: 0; min-width: 320px; background: #f4f7fb; }
 button, select { font: inherit; }
 .page-shell { max-width: 1440px; margin: 0 auto; padding: 0 42px; }

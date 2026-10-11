@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import base64
-import hashlib
 import hmac
 import json
 import os
@@ -12,7 +10,6 @@ import threading
 import time
 import secrets
 from datetime import date, datetime, time as datetime_time
-from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -25,6 +22,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from database.mysql_connection import get_connection, transaction  # noqa: E402
+from database.session_auth import (  # noqa: E402
+    checked_cookie_session, password_fingerprint, password_matches as _password_matches,
+)
 
 
 WEB_ROOT = Path(__file__).resolve().parent
@@ -66,21 +66,6 @@ def _query_one(connection: Any, sql: str, params: tuple[Any, ...] = ()) -> dict[
         return cursor.fetchone()
     finally:
         cursor.close()
-
-
-def _password_matches(password: str, encoded: str) -> bool:
-    """验证 init_database.py 生成的 PBKDF2-SHA256 密码哈希。"""
-    try:
-        scheme, iteration_text, salt_text, digest_text = encoded.split("$", 3)
-        iterations = int(iteration_text)
-        if scheme != "pbkdf2_sha256" or not 10_000 <= iterations <= 2_000_000:
-            return False
-        salt = base64.urlsafe_b64decode(salt_text + "=" * (-len(salt_text) % 4))
-        expected = base64.urlsafe_b64decode(digest_text + "=" * (-len(digest_text) % 4))
-        actual = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
-        return hmac.compare_digest(actual, expected)
-    except (ValueError, TypeError):
-        return False
 
 
 def _fetch_catalog() -> dict[str, Any]:
@@ -204,6 +189,7 @@ def _do_login(username: str, password: str) -> tuple[str, dict[str, Any]]:
             _sessions.pop(key, None)
         _sessions[token] = {
             "user": user_info,
+            "password_fingerprint": password_fingerprint(str(user["password_hash"])),
             "csrf_token": csrf_token,
             "expires_at": now + SESSION_LIFETIME_SECONDS,
         }
@@ -709,21 +695,9 @@ class TeacherHandler(BaseHTTPRequestHandler):
         return payload
 
     def _cookie_session(self) -> tuple[str | None, dict[str, Any] | None]:
-        cookie = SimpleCookie()
-        try:
-            cookie.load(self.headers.get("Cookie", ""))
-        except Exception:
-            return None, None
-        morsel = cookie.get(SESSION_COOKIE)
-        token = morsel.value if morsel else None
-        if not token:
-            return None, None
-        with _session_lock:
-            session = _sessions.get(token)
-            if session and session["expires_at"] <= time.time():
-                _sessions.pop(token, None)
-                session = None
-        return token, session
+        return checked_cookie_session(
+            self.headers, SESSION_COOKIE, _sessions, _session_lock, get_connection, "PROFESSOR",
+        )
 
     def _require_session(self) -> tuple[str, dict[str, Any]]:
         token, session = self._cookie_session()

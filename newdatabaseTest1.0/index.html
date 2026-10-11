@@ -8,7 +8,17 @@
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <div class="page-shell">
+  <section class="login-panel panel" id="login-panel" aria-labelledby="login-title">
+    <p class="eyebrow">DATABASE CHECK</p><h1 id="login-title">教务员登录</h1>
+    <p class="hero-copy">使用教务员账号登录后，可查看数据库状态与数据预览。</p>
+    <form id="login-form">
+      <label for="username">用户名</label><input id="username" name="username" autocomplete="username" maxlength="64" required>
+      <label for="password">密码</label><input id="password" name="password" type="password" autocomplete="current-password" maxlength="256" required>
+      <button class="button button-light" id="login-button" type="submit">登录数据库检查</button>
+      <p id="login-message" role="alert"></p>
+    </form>
+  </section>
+  <div class="page-shell" id="inspection-panel" hidden>
     <header class="topbar">
       <a class="brand" href="/" aria-label="数据库测试页首页">
         <span class="brand-mark">DB</span>
@@ -17,6 +27,7 @@
       <div class="topbar-right">
         <span class="local-tag"><span class="local-dot"></span>本机只读测试</span>
         <button class="button button-light" id="refresh-button" type="button">刷新状态</button>
+        <button class="button button-light" id="logout-button" type="button">退出登录</button>
       </div>
     </header>
 
@@ -87,7 +98,7 @@
           </dl>
           <div class="permission-box">
             <span class="permission-icon">✓</span>
-            <div><strong>安全的只读检查</strong><p>网页只展示预览字段，不读取密码哈希或加密身份信息。</p></div>
+            <div><strong>教务员只读检查</strong><p>数据预览仅限教务员查看，密码哈希和加密身份信息不会展示。</p></div>
           </div>
         </aside>
       </section>
@@ -97,7 +108,7 @@
           <div>
             <p class="eyebrow">SAMPLE RECORDS</p>
             <h2>数据预览</h2>
-            <p class="section-copy">选择一张表，查看最多 20 条非敏感字段。</p>
+            <p class="section-copy">选择一张表，查看最多 20 条白名单字段记录。</p>
           </div>
           <label class="select-wrap">
             <span class="sr-only">选择数据表</span>

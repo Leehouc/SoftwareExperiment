@@ -13,7 +13,6 @@ import sys
 import threading
 import time
 from datetime import date, datetime
-from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -27,6 +26,9 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from database.mysql_connection import get_connection, transaction  # noqa: E402
 from database.academic_rules import passed_courses_by_student  # noqa: E402
+from database.session_auth import (  # noqa: E402
+    checked_cookie_session, password_fingerprint, password_matches as _password_matches,
+)
 from billing.contract import (  # noqa: E402
     CURRENCY, MAX_PAYLOAD_BYTES, SCHEMA_VERSION, ContractError, validate_bill, validate_receipt,
 )
@@ -75,21 +77,6 @@ def _query_one(connection: Any, sql: str, params: tuple[Any, ...] = ()) -> dict[
         return cursor.fetchone()
     finally:
         cursor.close()
-
-
-def _password_matches(password: str, encoded: str) -> bool:
-    """验证 init_database.py 创建的 PBKDF2-SHA256 密码哈希。"""
-    try:
-        scheme, iteration_text, salt_text, digest_text = encoded.split("$", 3)
-        iterations = int(iteration_text)
-        if scheme != "pbkdf2_sha256" or not 10_000 <= iterations <= 2_000_000:
-            return False
-        salt = base64.urlsafe_b64decode(salt_text + "=" * (-len(salt_text) % 4))
-        expected = base64.urlsafe_b64decode(digest_text + "=" * (-len(digest_text) % 4))
-        actual = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
-        return hmac.compare_digest(actual, expected)
-    except (ValueError, TypeError):
-        return False
 
 
 def _password_hash(password: str) -> str:
@@ -799,21 +786,9 @@ class RegistrarHandler(BaseHTTPRequestHandler):
         return data
 
     def _cookie_session(self) -> tuple[str | None, dict[str, Any] | None]:
-        cookie = SimpleCookie()
-        try:
-            cookie.load(self.headers.get("Cookie", ""))
-        except Exception:
-            return None, None
-        morsel = cookie.get(SESSION_COOKIE)
-        token = morsel.value if morsel else None
-        if not token:
-            return None, None
-        with _session_lock:
-            session = _sessions.get(token)
-            if session and session["expires_at"] <= time.time():
-                _sessions.pop(token, None)
-                session = None
-        return token, session
+        return checked_cookie_session(
+            self.headers, SESSION_COOKIE, _sessions, _session_lock, get_connection, "REGISTRAR",
+        )
 
     def _require_session(self) -> tuple[str, dict[str, Any]]:
         token, session = self._cookie_session()
@@ -894,6 +869,7 @@ class RegistrarHandler(BaseHTTPRequestHandler):
                              "username": user["username"], "fullName": user["fullName"]}
                 with _session_lock:
                     _sessions[token] = {"user": safe_user, "csrf_token": csrf,
+                                        "password_fingerprint": password_fingerprint(str(user["passwordHash"])),
                                         "expires_at": time.time() + SESSION_LIFETIME_SECONDS}
                 self._send_json(200, {"ok": True, "user": safe_user},
                                 {"Set-Cookie": f"{SESSION_COOKIE}={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={SESSION_LIFETIME_SECONDS}"})

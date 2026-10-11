@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import sys
+import threading
+import time
+import hmac
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -14,12 +18,56 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from database.mysql_connection import get_connection  # noqa: E402
+from database.session_auth import (  # noqa: E402
+    checked_cookie_session, password_fingerprint, password_matches,
+)
 
 
 WEB_ROOT = Path(__file__).resolve().parent
 HOST = "127.0.0.1"
 DEFAULT_PORT = 8090
 PREVIEW_LIMIT = 20
+SESSION_COOKIE = "database_check_session"
+SESSION_LIFETIME_SECONDS = 60 * 60
+MAX_REQUEST_BYTES = 4096
+_sessions = {}
+_session_lock = threading.Lock()
+
+
+class ApiError(Exception):
+    def __init__(self, message: str, status: int = 400):
+        super().__init__(message)
+        self.status = status
+
+
+def _do_login(username: str, password: str):
+    connection = get_connection()
+    cursor = None
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT u.user_id, u.username, u.password_hash, r.registrar_id, r.full_name "
+            "FROM app_users u JOIN registrars r ON r.user_id = u.user_id "
+            "WHERE u.username = %s AND u.role = 'REGISTRAR' AND u.is_active = 1", (username,),
+        )
+        user = cursor.fetchone()
+    finally:
+        if cursor is not None:
+            cursor.close()
+        connection.close()
+    if not user or not password_matches(password, str(user["password_hash"])):
+        raise ApiError("用户名或密码不正确，或当前账号没有教务员权限。", 401)
+    token, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(24)
+    safe_user = {"userId": str(user["user_id"]), "registrarId": str(user["registrar_id"]),
+                 "username": user["username"], "fullName": user["full_name"]}
+    with _session_lock:
+        now = time.time()
+        for expired in [key for key, session in _sessions.items() if session["expires_at"] <= now]:
+            _sessions.pop(expired, None)
+        _sessions[token] = {"user": safe_user, "csrf_token": csrf,
+                            "password_fingerprint": password_fingerprint(str(user["password_hash"])),
+                            "expires_at": now + SESSION_LIFETIME_SECONDS}
+    return token, safe_user, csrf
 
 # 只允许读取这里列出的表和字段，密码哈希、加密身份信息等字段不会展示。
 TABLES: dict[str, dict[str, object]] = {
@@ -142,17 +190,33 @@ def fetch_preview(table_name: str) -> dict[str, object]:
 class TestPageHandler(BaseHTTPRequestHandler):
     """处理网页静态资源与只读 JSON 接口。"""
 
-    def _send_bytes(self, body: bytes, content_type: str, status: int = 200) -> None:
+    def _send_bytes(self, body: bytes, content_type: str, status: int = 200, extra_headers=None) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "same-origin")
+        self.send_header("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; form-action 'self'")
+        for name, value in (extra_headers or {}).items():
+            self.send_header(name, value)
         self.end_headers()
         self.wfile.write(body)
 
-    def _send_json(self, payload: dict[str, object], status: int = 200) -> None:
+    def _send_json(self, payload: dict[str, object], status: int = 200, extra_headers=None) -> None:
         body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
-        self._send_bytes(body, "application/json; charset=utf-8", status)
+        self._send_bytes(body, "application/json; charset=utf-8", status, extra_headers)
+
+    def _cookie_session(self):
+        return checked_cookie_session(
+            self.headers, SESSION_COOKIE, _sessions, _session_lock, get_connection, "REGISTRAR",
+        )
+
+    def _require_session(self):
+        token, session = self._cookie_session()
+        if not token or not session:
+            raise ApiError("登录状态已失效，请使用教务员账号重新登录。", 401)
+        return token, session
 
     def do_GET(self) -> None:  # noqa: N802
         request = urlparse(self.path)
@@ -166,15 +230,66 @@ class TestPageHandler(BaseHTTPRequestHandler):
         if request.path == "/app.js":
             self._serve_file("app.js", "text/javascript; charset=utf-8")
             return
-        if request.path == "/api/status":
-            self._handle_status()
+        try:
+            if request.path == "/api/session":
+                _, session = self._cookie_session()
+                self._send_json({"authenticated": True, "user": session["user"], "csrfToken": session["csrf_token"]}
+                                if session else {"authenticated": False})
+                return
+            if request.path in ("/api/status", "/api/preview"):
+                self._require_session()
+                if request.path == "/api/status":
+                    self._handle_status()
+                else:
+                    table_name = parse_qs(request.query).get("table", [""])[0]
+                    self._handle_preview(table_name)
+                return
+        except ApiError as exc:
+            self._send_json({"ok": False, "error": str(exc)}, exc.status)
             return
-        if request.path == "/api/preview":
-            table_name = parse_qs(request.query).get("table", [""])[0]
-            self._handle_preview(table_name)
+        except Exception as exc:
+            self.log_message("认证检查失败：%s", type(exc).__name__)
+            self._send_json({"ok": False, "error": "暂时无法检查登录权限，请检查数据库连接。"}, 503)
             return
 
         self._send_json({"ok": False, "error": "找不到请求的页面或接口。"}, 404)
+
+    def do_POST(self) -> None:  # noqa: N802
+        path = urlparse(self.path).path
+        if path not in ("/api/login", "/api/logout"):
+            self._send_json({"ok": False, "error": "数据库检查页只提供只读接口。"}, 405)
+            return
+        try:
+            if path == "/api/logout":
+                token, session = self._require_session()
+                if not hmac.compare_digest(self.headers.get("X-CSRF-Token", ""), session["csrf_token"]):
+                    raise ApiError("请求校验失败，请刷新页面后重试。", 403)
+                with _session_lock:
+                    _sessions.pop(token, None)
+                self._send_json({"ok": True}, extra_headers={"Set-Cookie":
+                    f"{SESSION_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"})
+                return
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if not 0 < length <= MAX_REQUEST_BYTES:
+                    raise ValueError()
+                body = json.loads(self.rfile.read(length).decode("utf-8"))
+            except (ValueError, UnicodeDecodeError):
+                raise ApiError("请求内容不是有效的登录信息。")
+            if not isinstance(body, dict):
+                raise ApiError("请求内容不是有效的登录信息。")
+            username, password = body.get("username"), body.get("password")
+            if not isinstance(username, str) or not username.strip() or len(username) > 64 \
+                    or not isinstance(password, str) or not password or len(password) > 256:
+                raise ApiError("请输入用户名和密码。", 401)
+            token, user, csrf = _do_login(username.strip(), password)
+            self._send_json({"ok": True, "user": user, "csrfToken": csrf}, extra_headers={"Set-Cookie":
+                f"{SESSION_COOKIE}={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={SESSION_LIFETIME_SECONDS}"})
+        except ApiError as exc:
+            self._send_json({"ok": False, "error": str(exc)}, exc.status)
+        except Exception as exc:
+            self.log_message("登录请求失败：%s", type(exc).__name__)
+            self._send_json({"ok": False, "error": "暂时无法完成登录请求，请检查数据库连接。"}, 503)
 
     def _serve_file(self, filename: str, content_type: str) -> None:
         try:
@@ -218,7 +333,7 @@ def main() -> None:
 
     server = ThreadingHTTPServer((HOST, port), TestPageHandler)
     print(f"数据库测试网页已启动：http://{HOST}:{port}")
-    print("此网页仅监听本机，并且只读取数据库数据。按 Ctrl+C 停止服务。")
+    print("此网页仅监听本机；须使用有效教务员账号登录后才可读取数据库。按 Ctrl+C 停止服务。")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

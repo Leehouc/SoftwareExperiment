@@ -25,6 +25,7 @@ function escapeHtml(value) {
 }
 
 async function request(path, options = {}) {
+  const user = state.user;
   const method = options.method || "GET";
   const headers = { Accept: "application/json" };
   const init = { method, headers, credentials: "same-origin", cache: "no-store" };
@@ -37,7 +38,12 @@ async function request(path, options = {}) {
   let payload;
   try { payload = await response.json(); }
   catch { throw new RequestError("服务器返回了无法识别的数据。"); }
+  if (response.status === 401 && path !== "/api/login" && user && user === state.user) {
+    clearLocalSession();
+    document.getElementById("login-message").textContent = payload.error || "登录状态已失效，请重新登录。";
+  }
   if (!response.ok) throw new RequestError(payload.error || "请求失败。", payload.issues || []);
+  if (user && user !== state.user) throw new RequestError("登录状态已改变，请重新加载数据。");
   return payload;
 }
 
@@ -137,10 +143,12 @@ function registrationLabel() {
 }
 
 async function loadData(semesterId = "") {
+  const user = state.user;
   const path = semesterId
     ? `/api/teacher/data?semester=${encodeURIComponent(semesterId)}`
     : "/api/teacher/data";
   const data = await request(path);
+  if (user !== state.user) return;
   state.data = data;
   state.selectedOfferingIds = [...(data.selectedOfferingIds || [])];
   const rosterCourses = data.rosterCourses || [];
@@ -305,19 +313,24 @@ function renderAll() {
 }
 
 async function loadRoster(offeringId) {
+  const user = state.user;
   state.activeOfferingId = offeringId;
   state.rosterData = null;
   state.rosterLoading = true;
   renderGradeCourses();
   renderRoster();
   try {
-    state.rosterData = await request(`/api/teacher/grades/roster?offering=${encodeURIComponent(offeringId)}`);
+    const data = await request(`/api/teacher/grades/roster?offering=${encodeURIComponent(offeringId)}`);
+    if (user !== state.user || offeringId !== state.activeOfferingId) return;
+    state.rosterData = data;
   } catch (error) {
-    showAlert(error.message, "error", error.issues);
+    if (user === state.user && offeringId === state.activeOfferingId) showAlert(error.message, "error", error.issues);
   } finally {
-    state.rosterLoading = false;
-    renderGradeCourses();
-    renderRoster();
+    if (user === state.user && offeringId === state.activeOfferingId && state.data) {
+      state.rosterLoading = false;
+      renderGradeCourses();
+      renderRoster();
+    }
   }
 }
 
@@ -400,13 +413,19 @@ async function login(event) {
 async function logout() {
   try { await request("/api/logout", { method: "POST", body: {} }); }
   catch { /* 会话失效时仍清除当前网页状态。 */ }
+  clearLocalSession();
+}
+
+function clearLocalSession() {
   state.user = null;
   state.data = null;
   state.csrfToken = "";
   state.selectedOfferingIds = [];
   state.activeOfferingId = "";
   state.rosterData = null;
+  state.rosterLoading = false;
   document.getElementById("password").value = "";
+  document.getElementById("roster-rows").innerHTML = "";
   setPortalVisible(false);
 }
 

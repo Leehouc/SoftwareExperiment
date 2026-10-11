@@ -20,11 +20,14 @@
   const statusClass = (status) => ({ ACTIVE: "green", OPEN: "green", SENT: "green", PENDING: "amber", RETRY: "amber", FAILED: "red", INACTIVE: "gray", GRADUATED: "gray", CLOSED: "gray" }[String(status || "").toUpperCase()] || "gray");
 
   async function api(path, options = {}) {
+    const user = state.user;
     const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
     if (options.method && options.method !== "GET" && state.csrf) headers["X-CSRF-Token"] = state.csrf;
     const response = await fetch(path, { credentials: "same-origin", ...options, headers });
     const payload = await response.json().catch(() => ({}));
+    if (response.status === 401 && path !== "/api/login" && user && user === state.user) showLogin();
     if (!response.ok) throw new Error(payload.error || `请求失败（${response.status}）`);
+    if (user && user !== state.user) throw new Error("登录状态已改变，请重新加载数据。");
     return payload;
   }
 
@@ -39,6 +42,10 @@
   function showLogin() {
     state.user = null;
     state.csrf = "";
+    state.data = null;
+    state.edit = null;
+    page.replaceChildren();
+    if (dialog.open) dialog.close();
     shell.hidden = true;
     loginScreen.hidden = false;
   }
