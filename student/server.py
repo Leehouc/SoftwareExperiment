@@ -25,6 +25,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from database.mysql_connection import get_connection, transaction  # noqa: E402
+from database.academic_rules import passed_courses_by_student  # noqa: E402
 
 
 WEB_ROOT = Path(__file__).resolve().parent
@@ -313,14 +314,7 @@ def _validate_submission(
     if len({offerings.get(item, {}).get("courseId") for item in primary}) != len(primary):
         issues.append("主选课中不能重复选择同一门课程的不同班次。")
 
-    completed_rows = _query_all(
-        connection,
-        "SELECT DISTINCT e.course_id FROM enrollments e "
-        "JOIN student_schedules sch ON sch.schedule_id = e.schedule_id "
-        "WHERE sch.student_id = %s AND e.enrollment_status = 'COMPLETED'",
-        (student_id,),
-    )
-    completed = {str(row["course_id"]) for row in completed_rows}
+    passed_courses = passed_courses_by_student(connection, student_id).get(student_id, set())
 
     primary_offerings: list[dict[str, Any]] = []
     for offering_id in sorted(primary):
@@ -337,7 +331,7 @@ def _validate_submission(
             issues.append(f"{offering_id} 当前未开放，不能提交。")
         course_id = str(offering.get("courseId", ""))
         for prerequisite_id in prerequisites.get(course_id, set()):
-            if prerequisite_id and prerequisite_id not in completed:
+            if prerequisite_id and prerequisite_id not in passed_courses:
                 prerequisite = courses.get(prerequisite_id, {})
                 issues.append(
                     f"{offering.get('courseId')} {offering.get('courseTitle', courses.get(course_id, {}).get('title', ''))} "
@@ -355,7 +349,7 @@ def _validate_submission(
             issues.append(f"备选开课 {offering_id} 当前未开放。")
         course_id = str(offering.get("courseId", ""))
         for prerequisite_id in prerequisites.get(course_id, set()):
-            if prerequisite_id and prerequisite_id not in completed:
+            if prerequisite_id and prerequisite_id not in passed_courses:
                 prerequisite = courses.get(prerequisite_id, {})
                 issues.append(
                     f"备选课程 {course_id} 缺少先修课程 {prerequisite.get('title', prerequisite_id)}。"

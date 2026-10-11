@@ -640,6 +640,8 @@ def _save_grades(
                         "VALUES (%s, %s, %s)",
                         (enrollment_id, professor_id, grade),
                     )
+                # COMPLETED 表示该课程已有成绩记录；是否通过由共用先修规则检查成绩。
+                # 保留 F/I 在成绩单中，避免把录入成绩等同于满足先修要求。
                 cursor.execute(
                     "UPDATE enrollments SET enrollment_status = 'COMPLETED' "
                     "WHERE enrollment_id = %s AND enrollment_status = 'ENROLLED'",

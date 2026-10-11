@@ -56,7 +56,7 @@ class SqliteConnection:
         return SqliteCursor(self.connection)
 
 
-class CloseRegistrationTests(unittest.TestCase):
+class CloseRegistrationTestCase(unittest.TestCase):
     def setUp(self) -> None:
         self.db = sqlite3.connect(":memory:")
         self.addCleanup(self.db.close)
@@ -177,6 +177,8 @@ class CloseRegistrationTests(unittest.TestCase):
             payload = json.loads(row["payload_json"])
             self.assertEqual({item["offeringId"] for item in payload["enrollments"]}, expected)
 
+
+class CloseRegistrationTests(CloseRegistrationTestCase):
     def test_missing_professor_cancels_only_that_offering(self) -> None:
         self.add_offering("VALID", (1, 2, 3))
         self.add_offering("NO_PROFESSOR", (1, 2, 3), assigned=False)

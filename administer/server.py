@@ -26,6 +26,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from database.mysql_connection import get_connection, transaction  # noqa: E402
+from database.academic_rules import passed_courses_by_student  # noqa: E402
 
 
 WEB_ROOT = Path(__file__).resolve().parent
@@ -519,15 +520,7 @@ def _close_registration(semester_id: str, session: dict[str, Any], catalog: dict
             "WHERE sch.semester_id = %s AND e.enrollment_status = 'ENROLLED' FOR UPDATE",
             (semester_id,),
         )
-        completed_rows = _query_all(
-            connection,
-            "SELECT sch.student_id AS studentId, e.course_id AS courseId FROM enrollments e "
-            "JOIN student_schedules sch ON sch.schedule_id = e.schedule_id "
-            "WHERE e.enrollment_status = 'COMPLETED'",
-        )
-        completed: dict[str, set[str]] = {}
-        for row in completed_rows:
-            completed.setdefault(str(row["studentId"]), set()).add(str(row["courseId"]))
+        passed_courses = passed_courses_by_student(connection)
 
         choice_map: dict[int, dict[str, list[str]]] = {}
         for row in choice_rows:
@@ -571,7 +564,7 @@ def _close_registration(semester_id: str, session: dict[str, Any], catalog: dict
             else:
                 selected[schedule_id] = []
             student_id = str(schedule["studentId"])
-            prior_courses = completed.get(student_id, set())
+            prior_courses = passed_courses.get(student_id, set())
             preferred = choice_map.get(schedule_id, {"PRIMARY": [], "ALTERNATE": []})
             for offering_id in preferred["PRIMARY"] + preferred["ALTERNATE"]:
                 if len(selected[schedule_id]) >= MAXIMUM_COURSES_PER_SCHEDULE:
