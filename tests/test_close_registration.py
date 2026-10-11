@@ -175,6 +175,11 @@ class CloseRegistrationTestCase(unittest.TestCase):
             self.assertEqual(row["amount_cents"], amount)
             self.assertEqual(row["status"], "PENDING")
             payload = json.loads(row["payload_json"])
+            self.assertEqual(payload["amountCents"], amount)
+            self.assertEqual(payload["currency"], "CNY")
+            self.assertEqual(payload["transactionId"], row["transaction_id"])
+            self.assertEqual(payload["idempotencyKey"], row["idempotency_key"])
+            self.assertEqual(sum(item["amountCents"] for item in payload["enrollments"]), amount)
             self.assertEqual({item["offeringId"] for item in payload["enrollments"]}, expected)
 
 

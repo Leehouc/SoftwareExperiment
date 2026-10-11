@@ -17,7 +17,7 @@ from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
@@ -27,6 +27,9 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from database.mysql_connection import get_connection, transaction  # noqa: E402
 from database.academic_rules import passed_courses_by_student  # noqa: E402
+from billing.contract import (  # noqa: E402
+    CURRENCY, MAX_PAYLOAD_BYTES, SCHEMA_VERSION, ContractError, validate_bill, validate_receipt,
+)
 
 
 WEB_ROOT = Path(__file__).resolve().parent
@@ -379,61 +382,85 @@ def _deactivate_profile(kind: str, record_id: str, session: dict[str, Any]) -> N
                       record_id, {"softDelete": True})
 
 
+def _send_pending_billing() -> None:
+    """发送一轮冻结账单；只有接收端确认交易后才标记 SENT。"""
+    if not BILLING_API_URL:
+        return
+    connection = get_connection()
+    try:
+        pending = _query_all(
+            connection,
+            "SELECT transaction_id AS transactionId, idempotency_key AS idempotencyKey, "
+            "student_id AS studentId, semester_id AS semesterId, amount_cents AS amountCents, "
+            "payload_json AS payloadJson FROM billing_transactions "
+            "WHERE status IN ('PENDING', 'RETRY') ORDER BY created_at, transaction_id LIMIT 20",
+        )
+    finally:
+        connection.close()
+    for item in pending:
+        status, error_text = "FAILED", None
+        attempted = False
+        try:
+            raw_payload = item["payloadJson"]
+            payload = json.loads(raw_payload) if isinstance(raw_payload, str) else raw_payload
+            validate_bill(payload, str(item["idempotencyKey"]))
+            for field in ("transactionId", "studentId", "semesterId", "amountCents"):
+                if payload[field] != item[field]:
+                    raise ContractError(f"账单 {field} 与队列数据库记录不一致")
+            encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+            if len(encoded) > MAX_PAYLOAD_BYTES:
+                raise ContractError("账单 JSON 超过接口允许的 65536 字节")
+        except (ContractError, ValueError, TypeError) as exc:
+            error_text = str(exc)[:1000]
+        else:
+            request = Request(
+                BILLING_API_URL, data=encoded, method="POST",
+                headers={
+                    "Content-Type": "application/json; charset=utf-8", "Accept": "application/json",
+                    "Idempotency-Key": str(item["idempotencyKey"]),
+                    "User-Agent": "CourseRegistrarBillingQueue/1.0",
+                },
+            )
+            attempted = True
+            status = "RETRY"
+            try:
+                with urlopen(request, timeout=8) as response:
+                    if response.status not in (200, 201):
+                        raise ContractError(f"账单服务返回 HTTP {response.status}，尚未确认接受账单")
+                    body = response.read(MAX_PAYLOAD_BYTES + 1)
+                    if len(body) > MAX_PAYLOAD_BYTES:
+                        raise ContractError("账单接收确认超过接口长度限制")
+                    validate_receipt(json.loads(body), str(item["transactionId"]), str(item["idempotencyKey"]))
+                    status = "SENT"
+            except HTTPError as exc:
+                status = "RETRY" if exc.code in (408, 425, 429) or exc.code >= 500 else "FAILED"
+                error_text = f"账单服务返回 HTTP {exc.code}"[:1000]
+                exc.close()
+            except Exception as exc:
+                error_text = str(exc)[:1000]
+        try:
+            with transaction() as update_connection:
+                cursor = update_connection.cursor()
+                try:
+                    cursor.execute(
+                        "UPDATE billing_transactions SET status = %s, attempt_count = attempt_count + %s, "
+                        "last_error = %s WHERE transaction_id = %s AND status IN ('PENDING', 'RETRY')",
+                        (status, int(attempted), error_text, item["transactionId"]),
+                    )
+                finally:
+                    cursor.close()
+        except Exception as exc:
+            # 接收端可能已接受；下一轮仍使用相同键和快照，依赖持久化幂等消除重复账单。
+            print(f"账单队列状态更新失败：{exc}")
+
+
 def _billing_worker() -> None:
-    """有配置账单接口时持续发送队列，并在失败后保留重试状态。"""
+    """有配置账单接口时持续扫描队列；无需重新读取目录或计算费率。"""
     if not BILLING_API_URL:
         return
     while True:
         try:
-            connection = get_connection()
-            try:
-                pending = _query_all(
-                    connection,
-                    "SELECT transaction_id AS transactionId, idempotency_key AS idempotencyKey, "
-                    "payload_json AS payloadJson FROM billing_transactions "
-                    "WHERE status IN ('PENDING', 'RETRY') ORDER BY created_at LIMIT 20",
-                )
-            finally:
-                connection.close()
-            for item in pending:
-                raw_payload = item["payloadJson"]
-                payload = raw_payload if isinstance(raw_payload, str) else json.dumps(
-                    raw_payload, ensure_ascii=False, separators=(",", ":")
-                )
-                request = Request(
-                    BILLING_API_URL,
-                    data=payload.encode("utf-8"),
-                    method="POST",
-                    headers={
-                        "Content-Type": "application/json; charset=utf-8",
-                        "Accept": "application/json",
-                        "Idempotency-Key": str(item["idempotencyKey"]),
-                        "User-Agent": "CourseRegistrarBillingQueue/1.0",
-                    },
-                )
-                error_text: str | None = None
-                sent = False
-                try:
-                    with urlopen(request, timeout=8) as response:
-                        sent = 200 <= response.status < 300
-                        if not sent:
-                            error_text = f"账单服务返回 HTTP {response.status}"
-                except Exception as exc:
-                    error_text = str(exc)[:1000]
-                try:
-                    with transaction() as update_connection:
-                        cursor = update_connection.cursor()
-                        try:
-                            cursor.execute(
-                                "UPDATE billing_transactions SET status = %s, attempt_count = attempt_count + 1, "
-                                "last_error = %s WHERE transaction_id = %s AND status IN ('PENDING', 'RETRY')",
-                                ("SENT" if sent else "RETRY", None if sent else error_text,
-                                 item["transactionId"]),
-                            )
-                        finally:
-                            cursor.close()
-                except Exception as exc:
-                    print(f"账单队列状态更新失败：{exc}")
+            _send_pending_billing()
         except Exception as exc:
             print(f"账单队列读取失败：{exc}")
         time.sleep(BILLING_RETRY_SECONDS)
@@ -484,7 +511,7 @@ def _close_registration(semester_id: str, session: dict[str, Any], catalog: dict
         assignments_rows = _query_all(
             connection,
             "SELECT p.offering_id AS offeringId, p.selection_status AS status, p.professor_id AS professorId, "
-            "f.status AS professorStatus FROM professor_offering_selections p "
+            "f.status AS professorStatus, f.full_name AS professorName FROM professor_offering_selections p "
             "JOIN professors f ON f.professor_id = p.professor_id "
             "WHERE p.semester_id = %s FOR UPDATE",
             (semester_id,),
@@ -496,7 +523,7 @@ def _close_registration(semester_id: str, session: dict[str, Any], catalog: dict
         }
         schedules = _query_all(
             connection,
-            "SELECT sch.schedule_id AS scheduleId, sch.student_id AS studentId, sch.status "
+            "SELECT sch.schedule_id AS scheduleId, sch.student_id AS studentId, s.full_name AS studentName, sch.status "
             "FROM student_schedules sch JOIN students s ON s.student_id = sch.student_id "
             "WHERE sch.semester_id = %s AND sch.status IN ('DRAFT', 'SUBMITTED', 'FINALIZED') "
             "AND s.status = 'ACTIVE' FOR UPDATE",
@@ -639,22 +666,42 @@ def _close_registration(semester_id: str, session: dict[str, Any], catalog: dict
                 cursor.execute("UPDATE student_schedules SET status = 'FINALIZED' WHERE schedule_id = %s",
                                (schedule_id,))
                 if chosen:
-                    amount_cents = sum(
-                        max(1, int(courses.get(str(semester_offerings[item].get("courseId")), {}).get("credits") or 1))
-                        * AMOUNT_CENTS_PER_CREDIT for item in chosen
-                    )
-                    payload = {
-                        "studentId": student_id,
-                        "semesterId": semester_id,
-                        "enrollments": [
-                            {"offeringId": item,
-                             "courseId": str(semester_offerings[item].get("courseId", "")),
-                             "credits": max(1, int(courses.get(str(semester_offerings[item].get("courseId")), {}).get("credits") or 1))}
-                            for item in chosen
-                        ],
-                    }
+                    # 在关闭注册的同一事务中冻结金额及最终课表；重试不得重新计算。
+                    departments = {str(item["departmentId"]): item.get("name")
+                                   for item in catalog.get("departments", [])}
+                    semester = next((item for item in catalog.get("semesters", [])
+                                     if str(item.get("semesterId")) == semester_id), {})
+                    entries = []
+                    for offering_id in chosen:
+                        offering = semester_offerings[offering_id]
+                        course_id = str(offering.get("courseId", ""))
+                        course = courses.get(course_id, {})
+                        credits = max(1, int(course.get("credits") or 1))
+                        teacher = assigned[offering_id]
+                        entries.append({
+                            "offeringId": offering_id, "courseId": course_id,
+                            "courseTitle": str(course.get("title", course_id)),
+                            "credits": credits, "amountCents": credits * AMOUNT_CENTS_PER_CREDIT,
+                            "section": offering.get("section"), "departmentId": course.get("departmentId"),
+                            "departmentName": departments.get(str(course.get("departmentId"))),
+                            "professorId": str(teacher["professorId"]), "professorName": str(teacher["professorName"]),
+                            "days": list(offering.get("days") or []), "startTime": offering.get("startTime"),
+                            "endTime": offering.get("endTime"), "room": offering.get("room"),
+                        })
+                    amount_cents = sum(item["amountCents"] for item in entries)
                     idempotency_key = f"REGCLOSE-{semester_id}-{student_id}"
                     transaction_id = "BILL-" + hashlib.sha256(idempotency_key.encode("utf-8")).hexdigest()[:32].upper()
+                    payload = {
+                        "schemaVersion": SCHEMA_VERSION, "eventType": "REGISTRATION_FINALIZED",
+                        "transactionId": transaction_id, "idempotencyKey": idempotency_key,
+                        "studentId": student_id, "studentName": str(schedule["studentName"]),
+                        "semesterId": semester_id, "semesterName": str(semester.get("name") or semester_id),
+                        "scheduleId": schedule_id, "scheduleStatus": "FINALIZED",
+                        "currency": CURRENCY, "amountCents": amount_cents,
+                        "totalCredits": sum(item["credits"] for item in entries),
+                        "unitAmountCentsPerCredit": AMOUNT_CENTS_PER_CREDIT, "enrollments": entries,
+                    }
+                    validate_bill(payload, idempotency_key)
                     cursor.execute(
                         "INSERT INTO billing_transactions (transaction_id, student_id, semester_id, idempotency_key, "
                         "amount_cents, status, payload_json) VALUES (%s, %s, %s, %s, %s, 'PENDING', %s) "
@@ -923,7 +970,7 @@ def main() -> None:
     server = ThreadingHTTPServer((HOST, PORT), RegistrarHandler)
     if BILLING_API_URL:
         threading.Thread(target=_billing_worker, name="billing-outbox-worker", daemon=True).start()
-        print(f"账单队列已连接外部接口：{BILLING_API_URL}")
+        print(f"账单发送目标已配置：{BILLING_API_URL}；发送状态以接收端确认为准。")
     print(f"注册管理员网页已启动：http://{HOST}:{PORT}")
     print(f"课程目录接口：{CATALOG_API_URL}/api/v1/catalog")
     print("按 Ctrl+C 停止服务。")
