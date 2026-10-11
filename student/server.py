@@ -456,7 +456,69 @@ def _do_login(username: str, password: str) -> tuple[str, dict[str, Any]]:
     return token, {**user_info, "csrfToken": csrf_token}
 
 
-def _build_student_data(student_id: str, requested_semester: str | None) -> dict[str, Any]:
+def _transcript_data(
+    connection: Any, student_id: str, catalog: dict[str, Any] | None,
+    requested_semester: str | None = None,
+) -> dict[str, Any]:
+    summaries = _query_all(
+        connection,
+        "SELECT semester_id, COUNT(*) AS course_count, MAX(graded_at) AS last_graded_at "
+        "FROM v_student_report_cards WHERE student_id = %s GROUP BY semester_id",
+        (student_id,),
+    )
+    history = {str(row["semester_id"]): row for row in summaries}
+    catalog_semesters = {str(item["semesterId"]): item for item in (catalog or {}).get("semesters", [])}
+    completed = []
+    for semester_id, semester in catalog_semesters.items():
+        end_date = _to_date(semester.get("endDate"))
+        if end_date is not None and end_date < date.today():
+            completed.append({
+                "semesterId": semester_id, "name": semester.get("name") or semester_id,
+                "endDate": end_date.isoformat(), "archived": False,
+                "recordCount": int(history.get(semester_id, {}).get("course_count", 0)),
+            })
+    completed.sort(key=lambda item: (item["endDate"], item["semesterId"]), reverse=True)
+    # 与教师成绩权限一致：目录覆盖范围之前的 COMPLETED 成绩允许作为归档查看。
+    # 已知学期按结束日期优先，避免旧学期补录成绩改变默认学期。
+    archived = [
+        {"semesterId": semester_id, "name": f"{semester_id}（归档）", "endDate": None,
+         "archived": True, "recordCount": int(row["course_count"])}
+        for semester_id, row in history.items() if semester_id not in catalog_semesters
+    ]
+    archived.sort(key=lambda item: (str(history[item["semesterId"]]["last_graded_at"]), item["semesterId"]), reverse=True)
+    semesters = completed + archived
+    valid_ids = {item["semesterId"] for item in semesters}
+    if requested_semester and requested_semester not in valid_ids:
+        raise ApiError("只能查看已结束学期或本人归档学期的成绩单。", 409)
+    semester_id = requested_semester or (semesters[0]["semesterId"] if semesters else None)
+    rows = _query_all(
+        connection,
+        "SELECT semester_id, offering_id, course_id, course_title_snapshot, credits_snapshot, "
+        "letter_grade, professor_id, graded_at FROM v_student_report_cards "
+        "WHERE student_id = %s AND semester_id = %s ORDER BY course_title_snapshot, offering_id",
+        (student_id, semester_id),
+    ) if semester_id else []
+    return {
+        "transcriptSemesterId": semester_id, "transcriptSemesters": semesters, "transcript": rows,
+        "completedCourseCount": sum(int(history.get(semester_id, {}).get("course_count", 0)) for semester_id in valid_ids),
+    }
+
+
+def _build_student_transcript(student_id: str, requested_semester: str | None) -> dict[str, Any]:
+    try:
+        catalog = _fetch_catalog()
+    except ApiError:
+        catalog = None
+    connection = get_connection()
+    try:
+        return _transcript_data(connection, student_id, catalog, requested_semester)
+    finally:
+        connection.close()
+
+
+def _build_student_data(
+    student_id: str, requested_semester: str | None, requested_transcript_semester: str | None = None,
+) -> dict[str, Any]:
     catalog: dict[str, Any] | None
     catalog_error: str | None = None
     try:
@@ -525,13 +587,7 @@ def _build_student_data(student_id: str, requested_semester: str | None) -> dict
                 (schedule["schedule_id"],),
             )
 
-        transcript = _query_all(
-            connection,
-            "SELECT semester_id, offering_id, course_id, course_title_snapshot, credits_snapshot, "
-            "letter_grade, professor_id, graded_at FROM v_student_report_cards "
-            "WHERE student_id = %s ORDER BY graded_at DESC, course_title_snapshot",
-            (student_id,),
-        )
+        transcript = _transcript_data(connection, student_id, catalog, requested_transcript_semester)
         count_rows = _query_all(
             connection,
             "SELECT offering_id, COUNT(*) AS total FROM enrollments "
@@ -583,7 +639,7 @@ def _build_student_data(student_id: str, requested_semester: str | None) -> dict
         "schedule": schedule,
         "choices": choices,
         "enrollments": enrollments,
-        "transcript": transcript,
+        **transcript,
         "offeringCounts": {str(row["offering_id"]): int(row["total"]) for row in count_rows},
         "teachingAssignments": {
             str(row["offering_id"]): {
@@ -700,8 +756,16 @@ class StudentHandler(BaseHTTPRequestHandler):
                 return
             if request.path == "/api/student/data":
                 _, session = self._require_session()
+                query = parse_qs(request.query)
+                semester = query.get("semester", [None])[0]
+                transcript_semester = query.get("transcriptSemester", [None])[0]
+                data = _build_student_data(str(session["user"]["studentId"]), semester, transcript_semester)
+                self._send_json(200, data)
+                return
+            if request.path == "/api/student/transcript":
+                _, session = self._require_session()
                 semester = parse_qs(request.query).get("semester", [None])[0]
-                data = _build_student_data(str(session["user"]["studentId"]), semester)
+                data = _build_student_transcript(str(session["user"]["studentId"]), semester)
                 self._send_json(200, data)
                 return
         except ApiError as exc:

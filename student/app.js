@@ -11,6 +11,8 @@ const state = {
   recentlyFull: [],
   refreshMessage: "",
   refreshError: false,
+  transcriptVersion: 0,
+  transcriptLoading: false,
 };
 
 const AVAILABILITY_REFRESH_MS = 15_000;
@@ -105,6 +107,7 @@ function switchPage(page) {
     button.classList.toggle("active", button.dataset.page === page);
   });
   document.getElementById("breadcrumb-title").textContent = pageTitles[page];
+  renderTerms();
   clearAlert();
 }
 
@@ -115,7 +118,8 @@ function formatDate(value) {
 }
 
 function semesterName(semesterId) {
-  const match = state.data?.semesters?.find((semester) => semester.semesterId === semesterId);
+  const match = [...(state.data?.semesters || []), ...(state.data?.transcriptSemesters || [])]
+    .find((semester) => semester.semesterId === semesterId);
   return match?.name || semesterId || "未设置学期";
 }
 
@@ -148,9 +152,14 @@ function currentSelections() {
 async function loadData(semesterId = "") {
   const version = ++state.dataVersion;
   const user = state.user;
-  const url = semesterId ? `/api/student/data?semester=${encodeURIComponent(semesterId)}` : "/api/student/data";
+  const query = [];
+  if (semesterId) query.push(`semester=${encodeURIComponent(semesterId)}`);
+  if (state.data?.transcriptSemesterId) query.push(`transcriptSemester=${encodeURIComponent(state.data.transcriptSemesterId)}`);
+  const url = `/api/student/data${query.length ? `?${query.join("&")}` : ""}`;
   const data = await request(url);
   if (version !== state.dataVersion || user !== state.user) return;
+  state.transcriptVersion += 1;
+  state.transcriptLoading = false;
   state.data = data;
   state.primary = [];
   state.alternate = [];
@@ -161,6 +170,34 @@ async function loadData(semesterId = "") {
   renderAll();
   if (state.user) startAvailabilityRefresh();
   if (data.catalogError) showAlert(data.catalogError, "error");
+}
+
+const TRANSCRIPT_FIELDS = ["transcript", "transcriptSemesterId", "transcriptSemesters", "completedCourseCount"];
+
+async function loadTranscript(semesterId) {
+  if (!state.data) return;
+  const version = ++state.transcriptVersion;
+  const dataVersion = state.dataVersion;
+  const user = state.user;
+  state.transcriptLoading = true;
+  renderTerms();
+  renderTranscript();
+  try {
+    const data = await request(`/api/student/transcript${semesterId ? `?semester=${encodeURIComponent(semesterId)}` : ""}`);
+    if (version !== state.transcriptVersion || dataVersion !== state.dataVersion || user !== state.user) return;
+    for (const field of TRANSCRIPT_FIELDS) state.data[field] = data[field];
+    renderOverview();
+  } catch (error) {
+    if (version === state.transcriptVersion && dataVersion === state.dataVersion && user === state.user) {
+      showAlert(error.message, "error", error.issues);
+    }
+  } finally {
+    if (version === state.transcriptVersion && dataVersion === state.dataVersion && user === state.user) {
+      state.transcriptLoading = false;
+      renderTerms();
+      renderTranscript();
+    }
+  }
 }
 
 function offeringAvailability(offering, data = state.data) {
@@ -215,10 +252,12 @@ async function refreshAvailability() {
   const previous = state.data;
   const semesterId = previous.semesterId;
   const version = state.dataVersion;
+  const transcriptVersion = state.transcriptVersion;
   const user = state.user;
   state.refreshInFlight = true;
   try {
-    const data = await request(`/api/student/data?semester=${encodeURIComponent(semesterId)}`);
+    const transcriptSemester = previous.transcriptSemesterId;
+    const data = await request(`/api/student/data?semester=${encodeURIComponent(semesterId)}${transcriptSemester ? `&transcriptSemester=${encodeURIComponent(transcriptSemester)}` : ""}`);
     if (version !== state.dataVersion || state.user !== user || state.data?.semesterId !== semesterId) return;
     if (!data.catalog || data.catalogError) throw new RequestError(data.catalogError || "课程目录暂不可用。");
     const previousOffers = new Map((previous.catalog?.courseOfferings || []).map((item) => [item.offeringId, item]));
@@ -227,6 +266,9 @@ async function refreshAvailability() {
       return offering.semesterId === semesterId && old && !offeringAvailability(old, previous).full
         && offeringAvailability(offering, data).full;
     }).map((offering) => offering.offeringId);
+    if (transcriptVersion !== state.transcriptVersion || state.transcriptLoading) {
+      for (const field of TRANSCRIPT_FIELDS) data[field] = state.data[field];
+    }
     state.data = data;
     // 不调用 currentSelections，也不替换主选/备选，完整保留编辑中的空课表和选择顺序。
     state.recentlyFull = [...new Set([...state.recentlyFull, ...newlyFull])]
@@ -275,10 +317,13 @@ function scheduleDisplayState() {
 
 function renderTerms() {
   const select = document.getElementById("semester-select");
-  const semesters = state.data?.semesters || [];
+  const transcriptPage = state.page === "transcript";
+  const semesters = (transcriptPage ? state.data?.transcriptSemesters : state.data?.semesters) || [];
   select.innerHTML = semesters.map((semester) => `<option value="${escapeHtml(semester.semesterId)}">${escapeHtml(semester.name)}</option>`).join("");
-  if (state.data?.semesterId) select.value = state.data.semesterId;
-  select.disabled = semesters.length === 0;
+  if (!semesters.length) select.innerHTML = `<option value="">${transcriptPage ? "暂无已结束学期" : "暂无学期"}</option>`;
+  select.value = (transcriptPage ? state.data?.transcriptSemesterId : state.data?.semesterId) || "";
+  select.disabled = semesters.length === 0 || (transcriptPage && state.transcriptLoading);
+  select.ariaLabel = transcriptPage ? "选择成绩单学期" : "选择学期";
 }
 
 function renderOverview() {
@@ -309,8 +354,9 @@ function renderOverview() {
     `${day}-${item.startTime || ""}-${item.endTime || ""}`
   ))));
   document.getElementById("metric-time-count").textContent = String(weeklySlots.size || "—");
-  document.getElementById("metric-completed").textContent = String(data.transcript?.length || 0);
-  document.getElementById("metric-gpa").textContent = data.transcript?.length ? "历史成绩已同步" : "暂无历史成绩";
+  const completedCount = data.completedCourseCount ?? data.transcript?.length ?? 0;
+  document.getElementById("metric-completed").textContent = String(completedCount);
+  document.getElementById("metric-gpa").textContent = completedCount ? "历史成绩已同步" : "暂无历史成绩";
   document.getElementById("progress-value").textContent = `${percent}%`;
   document.getElementById("progress-ring").style.setProperty("--progress", `${percent}%`);
   document.getElementById("progress-title").textContent = selectedCount ? `已选择 ${selectedCount} 门课程` : "还未开始选课";
@@ -473,10 +519,26 @@ function renderSchedule() {
 
 function renderTranscript() {
   const data = state.data;
+  const select = document.getElementById("transcript-semester-select");
+  const semesters = data.transcriptSemesters || [];
+  select.innerHTML = semesters.length
+    ? semesters.map((semester) => `<option value="${escapeHtml(semester.semesterId)}">${escapeHtml(semester.name)}</option>`).join("")
+    : '<option value="">暂无已结束学期</option>';
+  select.value = data.transcriptSemesterId || "";
+  select.disabled = semesters.length === 0 || state.transcriptLoading;
+  const term = semesters.find((semester) => semester.semesterId === data.transcriptSemesterId);
+  document.getElementById("transcript-period-summary").textContent = state.transcriptLoading
+    ? "正在加载成绩单…"
+    : (term ? `当前查看：${term.name} · 可切换其他历史学期` : "目前没有可查看的已结束学期。");
   const faculty = Object.fromEntries((data.catalog?.faculty || []).map((item) => [item.facultyId, item.name]));
   const rows = data.transcript || [];
   document.getElementById("transcript-rows").innerHTML = rows.map((record) => `<tr><td class="semester-cell">${escapeHtml(semesterName(record.semester_id))}</td><td>${escapeHtml(record.course_title_snapshot)}</td><td>${escapeHtml(record.course_id)}</td><td>${escapeHtml(record.credits_snapshot)}</td><td><span class="grade-mark">${escapeHtml(record.letter_grade)}</span></td><td>${escapeHtml(faculty[record.professor_id] || record.professor_id)}</td></tr>`).join("");
   document.getElementById("transcript-empty").hidden = rows.length > 0;
+  document.getElementById("transcript-course-count").textContent = String(rows.length);
+  document.getElementById("transcript-completed-count").textContent = String(rows.length);
+  document.getElementById("transcript-empty-copy").textContent = term
+    ? `${term.name}暂未录入成绩，可切换其他历史学期查看。`
+    : "学期结束并录入成绩后，可以在这里查看。";
 }
 
 function renderAll() {
@@ -593,6 +655,8 @@ async function login(event) {
 
 async function logout() {
   stopAvailabilityRefresh();
+  state.transcriptVersion += 1;
+  state.transcriptLoading = false;
   try { await request("/api/logout", { method: "POST", body: {} }); }
   catch { /* 本地会话若已过期，仍清除网页状态并返回登录页。 */ }
   state.user = null;
@@ -632,9 +696,13 @@ document.querySelectorAll("[data-page]").forEach((button) => button.addEventList
 document.querySelectorAll("[data-go-page]").forEach((button) => button.addEventListener("click", () => switchPage(button.dataset.goPage)));
 document.getElementById("logout-button").addEventListener("click", logout);
 document.getElementById("semester-select").addEventListener("change", async (event) => {
-  try { await loadData(event.target.value); }
+  try {
+    if (state.page === "transcript") await loadTranscript(event.target.value);
+    else await loadData(event.target.value);
+  }
   catch (error) { showAlert(error.message, "error", error.issues); }
 });
+document.getElementById("transcript-semester-select").addEventListener("change", (event) => loadTranscript(event.target.value));
 document.getElementById("course-search").addEventListener("input", renderCourseCatalog);
 document.getElementById("department-filter").addEventListener("change", renderCourseCatalog);
 document.getElementById("clear-filters").addEventListener("click", () => {
