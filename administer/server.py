@@ -585,58 +585,16 @@ def _close_registration(semester_id: str, session: dict[str, Any], catalog: dict
             or len(offering_students.get(offering_id, set())) + external_counts.get(offering_id, 0)
             < MINIMUM_OFFERING_ENROLLMENT
         }
-        cancelled_schedules: set[int] = set()
-        while True:
-            newly_cancelled = {
-                schedule_id for schedule_id, offering_ids in selected.items()
-                if schedule_id not in cancelled_schedules and any(
-                    offering_id in cancelled_offerings for offering_id in offering_ids
-                )
-            }
-            if not newly_cancelled:
-                break
-            cancelled_schedules.update(newly_cancelled)
-            for schedule_id in newly_cancelled:
-                student_id = str(schedule_by_id[schedule_id]["studentId"])
-                for offering_id in selected.get(schedule_id, []):
-                    offering_students.get(offering_id, set()).discard(student_id)
-            added = {
-                offering_id for offering_id in semester_offerings
-                if offering_id not in cancelled_offerings
-                and len(offering_students.get(offering_id, set())) + external_counts.get(offering_id, 0)
-                < MINIMUM_OFFERING_ENROLLMENT
-            }
-            if not added:
-                break
-            cancelled_offerings.update(added)
-
         cursor = connection.cursor(dictionary=True)
         billed_students = 0
         try:
             for schedule_id, schedule in schedule_by_id.items():
                 student_id = str(schedule["studentId"])
-                chosen = [] if schedule_id in cancelled_schedules else [
+                # 只从课表中移除被取消的开课，保留其他课程及其注册人数。
+                chosen = [
                     offering_id for offering_id in selected.get(schedule_id, [])
                     if offering_id not in cancelled_offerings
                 ]
-                if schedule_id in cancelled_schedules:
-                    cursor.execute(
-                        "UPDATE enrollments SET enrollment_status = 'CANCELLED' "
-                        "WHERE schedule_id = %s AND enrollment_status = 'ENROLLED'", (schedule_id,)
-                    )
-                    cursor.execute(
-                        "UPDATE schedule_choices SET selection_status = 'CANCELLED' WHERE schedule_id = %s",
-                        (schedule_id,),
-                    )
-                    cursor.execute("UPDATE student_schedules SET status = 'CANCELLED' WHERE schedule_id = %s",
-                                   (schedule_id,))
-                    continue
-
-                cursor.execute(
-                    "UPDATE enrollments SET enrollment_status = 'CANCELLED' "
-                    "WHERE schedule_id = %s AND enrollment_status = 'ENROLLED'",
-                    (schedule_id,),
-                )
                 for offering_id in chosen:
                     offering = semester_offerings[offering_id]
                     course_id = str(offering.get("courseId", ""))
@@ -696,14 +654,21 @@ def _close_registration(semester_id: str, session: dict[str, Any], catalog: dict
                          json.dumps(payload, ensure_ascii=False, separators=(",", ":"))),
                     )
                     billed_students += 1
-            if semester_offerings:
-                ids = list(semester_offerings)
+            if cancelled_offerings:
+                cancelled_ids = sorted(cancelled_offerings)
+                cursor.execute(
+                    "UPDATE enrollments SET enrollment_status = 'CANCELLED' "
+                    "WHERE offering_id IN (" + ",".join(["%s"] * len(cancelled_ids)) + ") "
+                    "AND enrollment_status = 'ENROLLED' "
+                    "AND schedule_id IN (SELECT schedule_id FROM student_schedules WHERE semester_id = %s)",
+                    (*cancelled_ids, semester_id),
+                )
                 cursor.execute(
                     "UPDATE schedule_choices SET selection_status = 'CANCELLED' "
-                    "WHERE offering_id IN (" + ",".join(["%s"] * len(ids)) + ") "
+                    "WHERE offering_id IN (" + ",".join(["%s"] * len(cancelled_ids)) + ") "
                     "AND selection_status IN ('SELECTED', 'ENROLLED') "
                     "AND schedule_id IN (SELECT schedule_id FROM student_schedules WHERE semester_id = %s)",
-                    (*ids, semester_id),
+                    (*cancelled_ids, semester_id),
                 )
             cursor.execute(
                 "UPDATE registration_periods SET registration_status = 'CLOSED', closed_at = CURRENT_TIMESTAMP(3) "
@@ -723,13 +688,14 @@ def _close_registration(semester_id: str, session: dict[str, Any], catalog: dict
         _insert_audit(
             connection, _audit_actor(session), "CLOSE_REGISTRATION", "SEMESTER", semester_id,
             {"cancelledOfferings": sorted(cancelled_offerings),
-             "cancelledSchedules": len(cancelled_schedules),
+             "cancelledSchedules": 0,
              "billingTransactionsQueued": billed_students,
              "minimumEnrollment": MINIMUM_OFFERING_ENROLLMENT},
         )
     return {
         "cancelledOfferings": sorted(cancelled_offerings),
-        "cancelledSchedules": len(cancelled_schedules),
+        # 保留现有接口字段；关闭注册只取消开课，不取消整张课表。
+        "cancelledSchedules": 0,
         "billingTransactionsQueued": billed_students,
         "minimumEnrollment": MINIMUM_OFFERING_ENROLLMENT,
     }
