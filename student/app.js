@@ -218,9 +218,11 @@ function renderOverview() {
   document.getElementById("progress-value").textContent = `${percent}%`;
   document.getElementById("progress-ring").style.setProperty("--progress", `${percent}%`);
   document.getElementById("progress-title").textContent = selectedCount ? `已选择 ${selectedCount} 门课程` : "还未开始选课";
-  document.getElementById("progress-description").textContent = selectedCount >= 6
-    ? "选课单已完整，可以检查课表后提交。"
-    : "选择 4 门主选课程和 2 门备选课程，保存后可继续编辑。";
+  const selectionHint = data.previouslySubmitted
+    ? "加退选最多保留 4 门主选和 2 门备选，无需补满；提交后同步新增和退选。"
+    : "初次提交需选择 4 门主选和 2 门备选，系统会检查先修要求和时间冲突。";
+  document.getElementById("progress-description").textContent = selectionHint;
+  document.getElementById("selection-hint").textContent = selectionHint;
   document.getElementById("primary-count").textContent = String(state.primary.length);
   document.getElementById("alternate-count").textContent = String(state.alternate.length);
   document.getElementById("schedule-primary-count").textContent = `${state.primary.length} / 4`;

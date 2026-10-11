@@ -9,7 +9,7 @@ function portal(canEdit) {
   const context = vm.createContext({
     document: {
       getElementById(id) {
-        if (!nodes.has(id)) nodes.set(id, { value: "", classList: { toggle() {} } });
+        if (!nodes.has(id)) nodes.set(id, { value: "", classList: { toggle() {} }, style: { setProperty() {} } });
         return nodes.get(id);
       },
     },
@@ -19,7 +19,7 @@ function portal(canEdit) {
   const bindings = source.indexOf('\ndocument.getElementById("login-form").addEventListener');
   assert.ok(bindings > 0);
   vm.runInContext(source.slice(0, bindings) + `
-    globalThis.portal = { state, registrationLabel, toggleSelection, renderCourseCatalog, renderSchedule };
+    globalThis.portal = { state, registrationLabel, toggleSelection, renderCourseCatalog, renderSchedule, renderOverview };
     renderAll = () => {};
   `, context);
   const api = context.portal;
@@ -88,4 +88,18 @@ test("开放时保留编辑按钮和满员已选课程的移除能力", () => {
   assert.doesNotMatch(selected, /\bdisabled\b/);
   api.toggleSelection("primary", "O1");
   assert.equal(api.state.primary.length, 0);
+});
+
+test("加退选提示允许未补满的课表提交", () => {
+  const { api, nodes } = portal(true);
+  api.renderOverview();
+  assert.match(nodes.get("selection-hint").textContent, /无需补满/);
+  assert.match(nodes.get("progress-description").textContent, /无需补满/);
+});
+
+test("初次提交仍提示必须选择四门主选和两门备选", () => {
+  const { api, nodes } = portal(true);
+  api.state.data.previouslySubmitted = false;
+  api.renderOverview();
+  assert.match(nodes.get("selection-hint").textContent, /初次提交需选择 4 门主选和 2 门备选/);
 });

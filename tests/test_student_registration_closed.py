@@ -42,7 +42,7 @@ class StudentConnection(SqliteConnection):
         pass
 
 
-class StudentRegistrationClosedTests(unittest.TestCase):
+class StudentScheduleTestCase(unittest.TestCase):
     def setUp(self):
         self.db = sqlite3.connect(":memory:")
         self.addCleanup(self.db.close)
@@ -121,6 +121,8 @@ class StudentRegistrationClosedTests(unittest.TestCase):
     def student_data(self):
         return server._build_student_data("S", "TERM")
 
+
+class StudentRegistrationClosedTests(StudentScheduleTestCase):
     def test_closed_mutations_reject_all_schedule_states(self):
         for status in ("DRAFT", "SUBMITTED", "FINALIZED", "CANCELLED"):
             self.db.execute("UPDATE student_schedules SET status = ?", (status,))

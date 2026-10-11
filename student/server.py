@@ -295,17 +295,20 @@ def _validate_submission(
     primary: list[str],
     alternate: list[str],
     catalog: dict[str, Any],
+    previously_submitted: bool = False,
+    enrolled_ids: set[str] | None = None,
 ) -> tuple[list[str], dict[str, dict[str, Any]]]:
     issues: list[str] = []
+    enrolled_ids = enrolled_ids or set()
     offerings = {item.get("offeringId"): item for item in catalog["courseOfferings"]}
     courses = {item.get("courseId"): item for item in catalog["courses"]}
     prerequisites: dict[str, set[str]] = {}
     for item in catalog["prerequisites"]:
         prerequisites.setdefault(item.get("courseId", ""), set()).add(item.get("prerequisiteCourseId", ""))
 
-    if len(primary) != 4:
+    if not previously_submitted and len(primary) != 4:
         issues.append("提交前需要选择恰好 4 门主选课。")
-    if len(alternate) != 2:
+    if not previously_submitted and len(alternate) != 2:
         issues.append("提交前需要选择恰好 2 门备选课。")
     if len({offerings.get(item, {}).get("courseId") for item in primary}) != len(primary):
         issues.append("主选课中不能重复选择同一门课程的不同班次。")
@@ -328,6 +331,8 @@ def _validate_submission(
         primary_offerings.append(offering)
         if offering.get("semesterId") != semester_id:
             issues.append(f"开课 {offering_id} 不属于当前学期。")
+        if offering_id in enrolled_ids:
+            continue
         if str(offering.get("status", "")).upper() not in {"OPEN", "开放"}:
             issues.append(f"{offering_id} 当前未开放，不能提交。")
         course_id = str(offering.get("courseId", ""))
@@ -358,6 +363,8 @@ def _validate_submission(
 
     for index, first in enumerate(primary_offerings):
         for second in primary_offerings[index + 1 :]:
+            if first.get("offeringId") in enrolled_ids and second.get("offeringId") in enrolled_ids:
+                continue
             common_days = _days(first) & _days(second)
             first_start, first_end = _time_minutes(first.get("startTime")), _time_minutes(first.get("endTime"))
             second_start, second_end = _time_minutes(second.get("startTime")), _time_minutes(second.get("endTime"))
@@ -371,7 +378,7 @@ def _validate_submission(
                     f"{first.get('offeringId')} 与 {second.get('offeringId')} 上课时间冲突。"
                 )
 
-    selected_ids = sorted(set(primary + alternate))
+    selected_ids = sorted(set(primary + alternate) - enrolled_ids)
     for offering_id in selected_ids:
         offering = offerings.get(offering_id)
         if not offering:
@@ -771,9 +778,16 @@ class StudentHandler(BaseHTTPRequestHandler):
             schedule_id = int(schedule["schedule_id"])
             previously_submitted = _schedule_has_enrollments(connection, schedule_id)
             mode = _edit_mode(period, previously_submitted)
+            enrolled_rows = _query_all(
+                connection,
+                "SELECT offering_id FROM enrollments "
+                "WHERE schedule_id = %s AND enrollment_status = 'ENROLLED' FOR UPDATE",
+                (schedule_id,),
+            )
+            current_enrolled_ids = {str(row["offering_id"]) for row in enrolled_rows}
 
             if not submit:
-                _write_choices(connection, schedule_id, primary, alternate)
+                _write_choices(connection, schedule_id, primary, alternate, current_enrolled_ids)
                 cursor = connection.cursor()
                 try:
                     cursor.execute(
@@ -792,7 +806,8 @@ class StudentHandler(BaseHTTPRequestHandler):
                 return
 
             issues, offerings = _validate_submission(
-                connection, student_id, schedule_id, semester_id, primary, alternate, catalog
+                connection, student_id, schedule_id, semester_id, primary, alternate, catalog,
+                previously_submitted, current_enrolled_ids & set(primary),
             )
             if issues:
                 raise ApiError("课表校验未通过，请根据提示调整。", 422, issues)
@@ -801,13 +816,16 @@ class StudentHandler(BaseHTTPRequestHandler):
             _write_choices(connection, schedule_id, primary, alternate, enrolled_ids)
             cursor = connection.cursor(dictionary=True)
             try:
-                cursor.execute(
+                drop_sql = (
                     "UPDATE enrollments SET enrollment_status = 'DROPPED' "
-                    "WHERE schedule_id = %s AND enrollment_status = 'ENROLLED' "
-                    "AND offering_id NOT IN (" + ",".join(["%s"] * len(primary)) + ")",
-                    (schedule_id, *primary),
+                    "WHERE schedule_id = %s AND enrollment_status = 'ENROLLED'"
                 )
+                if primary:
+                    drop_sql += " AND offering_id NOT IN (" + ",".join(["%s"] * len(primary)) + ")"
+                cursor.execute(drop_sql, (schedule_id, *primary))
                 for offering_id in primary:
+                    if offering_id in current_enrolled_ids:
+                        continue
                     offering = offerings[offering_id]
                     course = next(
                         (item for item in catalog["courses"] if item.get("courseId") == offering.get("courseId")),
