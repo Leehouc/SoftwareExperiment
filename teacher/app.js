@@ -9,7 +9,7 @@ const state = {
   rosterLoading: false,
 };
 
-const pageTitles = { home: "工作概览", teaching: "授课选择", grades: "成绩录入" };
+const pageTitles = { home: "工作概览", teaching: "授课选择", grades: "班级名册与成绩" };
 
 class RequestError extends Error {
   constructor(message, issues = []) {
@@ -143,9 +143,9 @@ async function loadData(semesterId = "") {
   const data = await request(path);
   state.data = data;
   state.selectedOfferingIds = [...(data.selectedOfferingIds || [])];
-  const gradeCourses = data.gradeCourses || [];
-  if (!gradeCourses.some((course) => course.offeringId === state.activeOfferingId)) {
-    state.activeOfferingId = gradeCourses[0]?.offeringId || "";
+  const rosterCourses = data.rosterCourses || [];
+  if (!rosterCourses.some((course) => course.offeringId === state.activeOfferingId)) {
+    state.activeOfferingId = rosterCourses[0]?.offeringId || "";
   }
   state.rosterData = null;
   state.rosterLoading = Boolean(state.activeOfferingId);
@@ -239,13 +239,13 @@ function renderTeachingSelection() {
 }
 
 function renderGradeCourses() {
-  const courses = state.data.gradeCourses || [];
+  const courses = state.data.rosterCourses || [];
   const list = document.getElementById("grade-course-list");
   document.getElementById("grade-course-total").textContent = String(courses.length);
   document.getElementById("no-grade-courses").hidden = courses.length > 0;
   list.innerHTML = courses.map((course) => {
     const active = course.offeringId === state.activeOfferingId;
-    return `<button type="button" class="grade-course-button ${active ? "active" : ""}" data-grade-offering="${escapeHtml(course.offeringId)}"><span class="course-code-mark">${escapeHtml(course.courseId.slice(0, 4))}</span><span class="grade-course-text"><strong>${escapeHtml(course.courseTitle)}</strong><small>${escapeHtml(course.semesterName)} · ${escapeHtml(course.courseId)}</small></span><span class="grade-course-count">${Number(course.rosterCount || 0)}人</span></button>`;
+    return `<button type="button" class="grade-course-button ${active ? "active" : ""}" data-grade-offering="${escapeHtml(course.offeringId)}"><span class="course-code-mark">${escapeHtml(course.courseId.slice(0, 4))}</span><span class="grade-course-text"><strong>${escapeHtml(course.courseTitle)}</strong><small>${escapeHtml(course.semesterName)} · ${escapeHtml(course.courseId)} · ${course.canEditGrades ? "可录成绩" : "仅查看名册"}</small></span><span class="grade-course-count">${Number(course.rosterCount || 0)}人</span></button>`;
   }).join("");
 }
 
@@ -274,8 +274,12 @@ function renderRoster() {
     saveButton.disabled = true;
     return;
   }
-  const course = (state.data.gradeCourses || []).find((item) => item.offeringId === state.rosterData.offeringId);
+  const course = (state.data.rosterCourses || []).find((item) => item.offeringId === state.rosterData.offeringId);
   const rows = state.rosterData.roster || [];
+  const canEditGrades = state.rosterData.canEditGrades === true;
+  document.getElementById("roster-grade-hint").textContent = canEditGrades
+    ? "成绩范围：A、B、C、D、F、I。留空表示跳过，不会清除已有成绩。"
+    : "当前学期尚未结束，可查看名册；学期结束后才能录入或修改成绩。";
   title.textContent = course?.courseTitle || course?.courseId || state.rosterData.offeringId;
   subtitle.textContent = `${course?.semesterName || state.rosterData.semesterId} · ${course?.courseId || "开课"} · ${state.rosterData.offeringId}`;
   count.textContent = `${rows.length} 名学生`;
@@ -287,9 +291,9 @@ function renderRoster() {
       return `<option value="${grade}" ${grade === currentGrade ? "selected" : ""}>${label}</option>`;
     }).join("");
     const status = student.enrollment_status === "COMPLETED" ? "已完成" : "已注册";
-    return `<tr><td>${escapeHtml(student.full_name)}${student.letter_grade ? `<small>上次录入：${escapeHtml(student.graded_at || "已有成绩")}</small>` : ""}</td><td>${escapeHtml(student.student_id)}</td><td><span class="status-pill ${student.enrollment_status === "COMPLETED" ? "" : "registered"}">${status}</span></td><td><select class="grade-select" data-enrollment-id="${Number(student.enrollment_id)}" aria-label="${escapeHtml(student.full_name)}的成绩">${options}</select></td></tr>`;
+    return `<tr><td>${escapeHtml(student.full_name)}${student.letter_grade ? `<small>上次录入：${escapeHtml(student.graded_at || "已有成绩")}</small>` : ""}</td><td>${escapeHtml(student.student_id)}</td><td><span class="status-pill ${student.enrollment_status === "COMPLETED" ? "" : "registered"}">${status}</span></td><td><select class="grade-select" data-enrollment-id="${Number(student.enrollment_id)}" aria-label="${escapeHtml(student.full_name)}的成绩" ${canEditGrades ? "" : "disabled"}>${options}</select></td></tr>`;
   }).join("");
-  saveButton.disabled = rows.length === 0;
+  saveButton.disabled = !canEditGrades || rows.length === 0;
 }
 
 function renderAll() {
@@ -345,7 +349,7 @@ async function saveTeachingSelection() {
 }
 
 async function saveGrades() {
-  if (!state.rosterData) return;
+  if (!state.rosterData?.canEditGrades) return;
   const selects = document.querySelectorAll(".grade-select[data-enrollment-id]");
   const grades = {};
   for (const select of selects) {
@@ -363,7 +367,7 @@ async function saveGrades() {
     switchPage("grades");
   } catch (error) {
     showAlert(error.message, "error", error.issues);
-    button.disabled = !state.rosterData?.roster?.length;
+    button.disabled = !state.rosterData?.canEditGrades || !state.rosterData?.roster?.length;
   }
 }
 

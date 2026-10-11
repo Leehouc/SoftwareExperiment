@@ -55,7 +55,7 @@
       <nav class="side-nav" aria-label="教师功能导航">
         <button class="nav-item active" data-page="home"><span class="nav-icon">⌂</span>工作概览</button>
         <button class="nav-item" data-page="teaching"><span class="nav-icon">▦</span>授课选择</button>
-        <button class="nav-item" data-page="grades"><span class="nav-icon">✎</span>成绩录入</button>
+        <button class="nav-item" data-page="grades"><span class="nav-icon">✎</span>班级名册与成绩</button>
       </nav>
       <div class="sidebar-bottom">
         <div class="help-card"><span class="help-icon">?</span><strong>教师权限说明</strong><p>名册与成绩只对该开课的授课教师开放。</p><span class="help-link">成绩范围 · 仅限本人授课班级</span></div>
@@ -81,7 +81,7 @@
           </div>
           <div class="home-grid">
             <article class="card next-card"><div class="card-heading"><div><p class="eyebrow">TEACHING PLAN</p><h2>本学期授课安排</h2></div><button class="text-button" data-go-page="teaching">查看安排 <span>→</span></button></div><div class="course-preview-list" id="home-teaching-list"></div></article>
-            <article class="card action-card"><div class="card-heading"><div><p class="eyebrow">QUICK ACTION</p><h2>常用功能</h2></div></div><button class="action-row" data-go-page="teaching"><span class="action-icon action-icon-blue">▦</span><span><strong>选择授课课程</strong><small>查看资格课程并安排下学期授课</small></span><b>→</b></button><button class="action-row" data-go-page="grades"><span class="action-icon action-icon-green">✎</span><span><strong>录入学生成绩</strong><small>查看已结束学期的班级名册</small></span><b>→</b></button><div class="permission-note"><span>✓</span><p>学生名册和成绩接口会在服务器端校验教师与开课的归属关系。</p></div></article>
+            <article class="card action-card"><div class="card-heading"><div><p class="eyebrow">QUICK ACTION</p><h2>常用功能</h2></div></div><button class="action-row" data-go-page="teaching"><span class="action-icon action-icon-blue">▦</span><span><strong>选择授课课程</strong><small>查看资格课程并安排下学期授课</small></span><b>→</b></button><button class="action-row" data-go-page="grades"><span class="action-icon action-icon-green">✎</span><span><strong>查看名册与录入成绩</strong><small>当前学期可查看名册，学期结束后录入成绩</small></span><b>→</b></button><div class="permission-note"><span>✓</span><p>学生名册和成绩接口会在服务器端校验教师与开课的归属关系。</p></div></article>
           </div>
         </section>
 
@@ -94,10 +94,10 @@
         </section>
 
         <section class="page-section" id="page-grades">
-          <div class="page-intro"><div><p class="eyebrow">GRADE SUBMISSION</p><h1>成绩录入</h1><p class="intro-copy">选择已结束学期的授课课程，查看名册并录入或修改成绩。</p></div><div class="selection-total"><strong id="grade-course-total">0</strong><span>门可录入课程</span></div></div>
+          <div class="page-intro"><div><p class="eyebrow">GRADE SUBMISSION</p><h1>班级名册与成绩</h1><p class="intro-copy">查看本人授课班级的学生名册；学期结束后可录入或修改成绩。</p></div><div class="selection-total"><strong id="grade-course-total">0</strong><span>门授课课程</span></div></div>
           <div class="grade-layout">
-            <aside class="card grade-course-panel"><div class="card-heading"><div><p class="eyebrow">YOUR COURSES</p><h2>已结束课程</h2></div></div><div class="grade-course-list" id="grade-course-list"></div><div class="empty-state compact" id="no-grade-courses" hidden><span>✎</span><strong>暂时没有可录入课程</strong><p>该教师没有已结束学期的授课名册。</p></div></aside>
-            <article class="card roster-panel"><div class="roster-heading"><div><p class="eyebrow">CLASS ROSTER</p><h2 id="roster-title">选择一门课程</h2><p id="roster-subtitle">名册只包含当前教师所授课程的学生。</p></div><span class="roster-count" id="roster-count">—</span></div><div class="roster-table-wrap"><table class="roster-table"><thead><tr><th>学生</th><th>学号</th><th>注册状态</th><th>成绩</th></tr></thead><tbody id="roster-rows"></tbody></table></div><div class="roster-empty" id="roster-empty" hidden><span>⌁</span><strong>该班级暂时没有学生名册</strong><p>录入的成绩留空即可跳过该学生。</p></div><div class="roster-footer"><p>成绩范围：A、B、C、D、F、I。留空表示跳过，不会清除已有成绩。</p><button class="button button-primary" id="save-grades" disabled>保存成绩 <span>→</span></button></div></article>
+            <aside class="card grade-course-panel"><div class="card-heading"><div><p class="eyebrow">YOUR COURSES</p><h2>授课班级</h2></div></div><div class="grade-course-list" id="grade-course-list"></div><div class="empty-state compact" id="no-grade-courses" hidden><span>✎</span><strong>暂时没有授课班级</strong><p>该教师没有可查看名册的授课安排。</p></div></aside>
+            <article class="card roster-panel"><div class="roster-heading"><div><p class="eyebrow">CLASS ROSTER</p><h2 id="roster-title">选择一门课程</h2><p id="roster-subtitle">名册只包含当前教师所授课程的学生。</p></div><span class="roster-count" id="roster-count">—</span></div><div class="roster-table-wrap"><table class="roster-table"><thead><tr><th>学生</th><th>学号</th><th>注册状态</th><th>成绩</th></tr></thead><tbody id="roster-rows"></tbody></table></div><div class="roster-empty" id="roster-empty" hidden><span>⌁</span><strong>该班级暂时没有学生名册</strong><p>录入的成绩留空即可跳过该学生。</p></div><div class="roster-footer"><p id="roster-grade-hint">学期结束后可录入成绩，当前学期名册仅供查看。</p><button class="button button-primary" id="save-grades" disabled>保存成绩 <span>→</span></button></div></article>
           </div>
         </section>
       </main>

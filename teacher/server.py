@@ -344,15 +344,14 @@ def _build_teacher_data(professor_id: str, requested_semester: str | None) -> di
     finally:
         connection.close()
 
-    grade_courses = []
+    roster_courses = []
     for row in grade_rows:
         row_semester_id = str(row["semester_id"])
         completed_count = int(row["completed_count"] or 0)
-        if not _is_grade_term_complete(row_semester_id, completed_count, catalog):
-            continue
+        can_edit_grades = _is_grade_term_complete(row_semester_id, completed_count, catalog)
         offering = catalog_offerings.get(str(row["offering_id"]), {})
         course = catalog_courses.get(str(row.get("course_id") or offering.get("courseId")), {})
-        grade_courses.append(
+        roster_courses.append(
             {
                 "offeringId": str(row["offering_id"]),
                 "semesterId": row_semester_id,
@@ -361,6 +360,7 @@ def _build_teacher_data(professor_id: str, requested_semester: str | None) -> di
                 "courseTitle": str(row.get("course_title") or course.get("title") or offering.get("courseId") or "课程"),
                 "rosterCount": int(row["roster_count"] or 0),
                 "completedCount": completed_count,
+                "canEditGrades": can_edit_grades,
             }
         )
 
@@ -373,7 +373,8 @@ def _build_teacher_data(professor_id: str, requested_semester: str | None) -> di
         "canEditTeaching": can_edit,
         "eligibleOfferings": offers,
         "selectedOfferingIds": [item["offeringId"] for item in offers if item["selected"]],
-        "gradeCourses": grade_courses,
+        "rosterCourses": roster_courses,
+        "gradeCourses": [course for course in roster_courses if course["canEditGrades"]],
         "catalog": catalog,
     }
 
@@ -469,7 +470,7 @@ def _save_teaching_selection(
             cursor.close()
 
 
-def _assert_grade_assignment(
+def _assert_teaching_assignment(
     connection: Any, professor_id: str, offering_id: str, lock: bool = False
 ) -> dict[str, Any]:
     suffix = " FOR UPDATE" if lock else ""
@@ -481,14 +482,14 @@ def _assert_grade_assignment(
         (professor_id, offering_id),
     )
     if assignment is None:
-        raise ApiError("该开课不属于当前教师，无法查看或录入成绩。", 403)
+        raise ApiError("该开课不属于当前教师，无法查看名册或录入成绩。", 403)
     return assignment
 
 
 def _assert_grade_period(
     connection: Any, professor_id: str, offering_id: str, catalog: dict[str, Any]
 ) -> dict[str, Any]:
-    assignment = _assert_grade_assignment(connection, professor_id, offering_id)
+    assignment = _assert_teaching_assignment(connection, professor_id, offering_id)
     counts = _query_one(
         connection,
         "SELECT COUNT(*) AS roster_count, "
@@ -508,7 +509,7 @@ def _assert_grade_period(
 def _get_roster(professor_id: str, offering_id: str, catalog: dict[str, Any]) -> dict[str, Any]:
     connection = get_connection()
     try:
-        assignment = _assert_grade_period(connection, professor_id, offering_id, catalog)
+        assignment = _assert_teaching_assignment(connection, professor_id, offering_id)
         roster = _query_all(
             connection,
             "SELECT e.enrollment_id, e.course_id, e.course_title_snapshot, e.credits_snapshot, "
@@ -524,7 +525,15 @@ def _get_roster(professor_id: str, offering_id: str, catalog: dict[str, Any]) ->
         )
     finally:
         connection.close()
-    return {"offeringId": offering_id, "semesterId": assignment["semester_id"], "roster": roster}
+    can_edit_grades = _is_grade_term_complete(
+        str(assignment["semester_id"]),
+        sum(row["enrollment_status"] == "COMPLETED" for row in roster),
+        catalog,
+    )
+    return {
+        "offeringId": offering_id, "semesterId": assignment["semester_id"],
+        "roster": roster, "canEditGrades": can_edit_grades,
+    }
 
 
 def _save_grades(
@@ -551,7 +560,7 @@ def _save_grades(
 
     changed = 0
     with transaction() as connection:
-        assignment = _assert_grade_assignment(connection, professor_id, offering_id, lock=True)
+        assignment = _assert_teaching_assignment(connection, professor_id, offering_id, lock=True)
         _assert_grade_period(connection, professor_id, offering_id, catalog)
         roster = _query_all(
             connection,
