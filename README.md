@@ -1,8 +1,8 @@
 # SoftwareExperiment 课程注册系统
 
-本项目包含两部分：**遗留课程目录只读服务**和**课程注册新系统的业务数据库基础**。课程目录由虚拟 JSON 数据模拟；新系统的学生、教师、选课、成绩和账单等业务数据可使用 SQLite 本地演示，也可迁移到 MySQL。
+本项目包含两部分：**遗留课程目录只读服务**和**课程注册新系统**。课程目录由虚拟 JSON 数据模拟；学生、教师、注册管理员网页使用 MySQL 保存新系统的档案、选课、成绩和账单数据。SQLite 脚本与文件仅用于早期本地演示数据和一次性迁移。
 
-> `app.py` 与 `dashboard.py` 提供课程目录 API 和浏览页面。`student/` 和 `teacher/` 分别是独立的学生、教师网页模块，连接 MySQL 并读取课程目录 API；教务员网页尚未实现。
+> `app.py` 与 `dashboard.py` 提供课程目录 API 和浏览页面。`student/`、`teacher/` 和 `administer/` 是独立的学生、教师、注册管理员网页模块，连接 MySQL 并读取课程目录 API。
 
 ## 文件与目录说明
 
@@ -12,6 +12,7 @@
 | `dashboard.py` | 课程目录浏览网页，并将请求转发给 `app.py`。默认监听 `127.0.0.1:8001`，因此必须先启动 `app.py`。 |
 | `student/` | 独立的学生注册可视化网页及后端 API。支持学生登录、选择/保存/提交课表、加退选期修改和查看成绩单；默认监听 `127.0.0.1:8020`。启动前须先启动 MySQL 和 `app.py`。 |
 | `teacher/` | 独立的教师工作台及后端 API。支持教师登录、选择授课课程、查看本人班级名册和录入成绩；默认监听 `127.0.0.1:8030`。启动前须先启动 MySQL 和 `app.py`。 |
+| `administer/` | 独立的注册管理员工作台及后端 API。支持学生/教师档案和账户维护、关闭注册期、查看账单队列；默认监听 `127.0.0.1:8040`。启动前须先启动 MySQL 和 `app.py`。 |
 | `newdatabaseTest1.0/` | MySQL 数据库只读检查网页，可查看表记录数和演示数据预览。 |
 | `data/catalog.json` | 虚拟课程目录数据，包括院系、教师、学期、课程、先修关系和开课。用于没有真实 Ingres 数据库时开发和演示。 |
 | `init_database.py` | 创建并填充本地 SQLite 业务数据库；虚构学生、教师、教务员、选课、成绩等演示数据在此初始化。 |
@@ -22,7 +23,7 @@
 | `database/mysql_connection.py` | 新系统后端使用的 MySQL 连接池和事务辅助模块；从 `MYSQL_*` 环境变量读取配置。写事务成功自动提交，异常自动回滚。 |
 | `database/README.md` | SQLite 表结构、演示账号和课程目录边界的详细说明。 |
 | `database/README.mysql.md` | MySQL 初始化、账号权限、SQLite 数据迁移和连接层用法说明。 |
-| `requirements-mysql.txt` | MySQL Python 驱动依赖清单。 |
+| `requirements-mysql.txt` | MySQL 连接驱动和注册管理员档案加密依赖。 |
 | `README copy.md` | 课程目录 API 与 JSON 数据格式的详细说明（旧版独立说明文档）；本 README 是项目总入口。 |
 | `.vscode/settings.json` | VS Code 本机终端设置，包含本机 Python 路径。其他电脑需要按本机安装路径调整或删除此路径设置。 |
 | `2026年软件工程课程设计题目.pdf` | 课程设计题目与用例说明。 |
@@ -35,7 +36,7 @@
 - Windows 开发时建议在项目目录打开 PowerShell。
 - Python 3.10 或更新版本。本文命令使用 Windows Python 启动器 `py -3`，即使终端里的 `python` 指向 MSYS2 也可以运行。
 - 只运行课程目录 API 和网页时不需要安装第三方 Python 包。
-- 使用 MySQL 业务数据库时需要 MySQL Server 8.0.16 或更新版本，并安装 `mysql-connector-python`。
+- 使用 MySQL 业务数据库时需要 MySQL Server 8.0.16 或更新版本；安装 `requirements-mysql.txt` 中的 MySQL 驱动和档案加密依赖。
 
 注意区分终端：`PS C:\...>` 是 PowerShell；`C:\...>` 通常是 CMD；`mysql>` 是 MySQL SQL 命令行。下面的 `$env:...` 命令只在 PowerShell 运行，SQL 语句只在 MySQL Workbench 的 SQL 编辑器或 `mysql>` 中运行。
 
@@ -148,6 +149,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\teacher\start.ps1
 ```
 
 输入 MySQL 应用账号密码后，打开 <http://127.0.0.1:8030>。演示账号包括 `prof.chen` / `ProfessorDemo1!`、`prof.ortega` / `ProfessorDemo2!` 和 `prof.wu` / `ProfessorDemo5!`。教师网页详细说明见 [teacher/README.md](teacher/README.md)。
+
+### 7. 启动注册管理员工作台
+
+保持 MySQL 和课程目录 API 运行，在另一个 PowerShell 终端运行：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\administer\start.ps1
+```
+
+输入 MySQL 应用账号密码后，打开 <http://127.0.0.1:8040>。教务员演示账号为 `registrar.demo` / `RegistrarDemo1!`。新增人员会创建对应的登录用户；停用会保留历史关联。社会安全号码是可选字段，录入前需要按 [administer/README.md](administer/README.md) 配置 AES-GCM 密钥。注册关闭时产生的账单会进入 `billing_transactions` 队列；如配置 `BILLING_API_URL`，模块会发送并重试失败账单。注册管理员详细说明见 [administer/README.md](administer/README.md)。
 
 ## 课程目录 API
 
