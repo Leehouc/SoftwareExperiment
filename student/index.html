@@ -109,6 +109,8 @@
             <div class="register-main">
               <div class="catalog-toolbar"><div class="search-box"><span>⌕</span><input id="course-search" type="search" placeholder="搜索课程名称或编号"></div><select id="department-filter" aria-label="筛选院系"><option value="">全部院系</option></select><button class="filter-button" id="clear-filters">重置</button></div>
               <div class="catalog-summary"><span><b id="catalog-course-count">0</b> 门课程</span><span class="catalog-source"><i></i>来自课程目录</span></div>
+              <p class="catalog-refresh-status" id="catalog-refresh-status">每 15 秒自动更新名额与授课信息，保留当前选择。</p>
+              <div class="catalog-notice" id="catalog-notice" role="status" aria-live="polite" hidden></div>
               <div class="course-grid" id="course-list"></div>
               <div class="no-courses" id="no-courses" hidden>没有找到符合条件的课程，请调整筛选条件。</div>
             </div>

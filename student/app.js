@@ -5,7 +5,15 @@ const state = {
   page: "home",
   primary: [],
   alternate: [],
+  dataVersion: 0,
+  refreshInFlight: false,
+  refreshTimer: null,
+  recentlyFull: [],
+  refreshMessage: "",
+  refreshError: false,
 };
+
+const AVAILABILITY_REFRESH_MS = 15_000;
 
 const pageTitles = {
   home: "总览",
@@ -138,14 +146,102 @@ function currentSelections() {
 }
 
 async function loadData(semesterId = "") {
+  const version = ++state.dataVersion;
+  const user = state.user;
   const url = semesterId ? `/api/student/data?semester=${encodeURIComponent(semesterId)}` : "/api/student/data";
   const data = await request(url);
+  if (version !== state.dataVersion || user !== state.user) return;
   state.data = data;
   state.primary = [];
   state.alternate = [];
+  state.recentlyFull = [];
+  state.refreshMessage = "每 15 秒自动更新名额与授课信息，保留当前选择。";
+  state.refreshError = false;
   currentSelections();
   renderAll();
+  if (state.user) startAvailabilityRefresh();
   if (data.catalogError) showAlert(data.catalogError, "error");
+}
+
+function offeringAvailability(offering, data = state.data) {
+  const occupied = Number(offering.enrolledCount || 0) + Number(data?.offeringCounts?.[offering.offeringId] || 0);
+  const capacity = Number(offering.capacity || 0);
+  const status = String(offering.status || "").toUpperCase();
+  const open = ["OPEN", "开放"].includes(status);
+  const full = ["FULL", "已满"].includes(status) || (open && capacity > 0 && occupied >= capacity);
+  return {
+    full, unavailable: !open && !["FULL", "已满"].includes(status),
+    label: full ? "当前已满" : (!open ? "当前未开放" : (capacity > 0 ? `余 ${Math.max(0, capacity - occupied)} 个名额` : "名额不限")),
+  };
+}
+
+function renderAvailabilityNotice() {
+  const registered = new Set((state.data?.enrollments || [])
+    .filter((item) => item.enrollment_status === "ENROLLED" && state.primary.includes(item.offering_id))
+    .map((item) => item.offering_id));
+  const chosen = [...state.primary, ...state.alternate];
+  const blocked = chosen.filter((id) => {
+    const offering = offerById(id);
+    return !registered.has(id) && (!offering || offeringAvailability(offering).full || offeringAvailability(offering).unavailable);
+  });
+  const changed = state.recentlyFull.filter((id) => !blocked.includes(id) && !registered.has(id));
+  const label = (id) => {
+    const offering = offerById(id);
+    return offering ? `${courseById(offering.courseId)?.title || offering.courseId}（${id}）` : id;
+  };
+  const messages = [];
+  if (blocked.length) messages.push(`所选未注册课程已满或不可用：${blocked.map(label).join("、")}。当前选择已保留，请调整后提交。`);
+  if (changed.length) messages.push(`以下课程刚刚满员：${changed.map(label).join("、")}。`);
+  if (state.refreshError) messages.push(state.refreshMessage);
+  const notice = document.getElementById("catalog-notice");
+  notice.textContent = messages.join(" ");
+  notice.hidden = messages.length === 0;
+  document.getElementById("catalog-refresh-status").textContent = state.refreshMessage;
+}
+
+function startAvailabilityRefresh() {
+  if (state.refreshTimer !== null) window.clearInterval(state.refreshTimer);
+  state.refreshTimer = window.setInterval(refreshAvailability, AVAILABILITY_REFRESH_MS);
+}
+
+function stopAvailabilityRefresh() {
+  if (state.refreshTimer !== null) window.clearInterval(state.refreshTimer);
+  state.refreshTimer = null;
+  ++state.dataVersion;
+}
+
+async function refreshAvailability() {
+  if (!state.user || !state.data || document.hidden || state.refreshInFlight) return;
+  const previous = state.data;
+  const semesterId = previous.semesterId;
+  const version = state.dataVersion;
+  const user = state.user;
+  state.refreshInFlight = true;
+  try {
+    const data = await request(`/api/student/data?semester=${encodeURIComponent(semesterId)}`);
+    if (version !== state.dataVersion || state.user !== user || state.data?.semesterId !== semesterId) return;
+    if (!data.catalog || data.catalogError) throw new RequestError(data.catalogError || "课程目录暂不可用。");
+    const previousOffers = new Map((previous.catalog?.courseOfferings || []).map((item) => [item.offeringId, item]));
+    const newlyFull = data.catalog.courseOfferings.filter((offering) => {
+      const old = previousOffers.get(offering.offeringId);
+      return offering.semesterId === semesterId && old && !offeringAvailability(old, previous).full
+        && offeringAvailability(offering, data).full;
+    }).map((offering) => offering.offeringId);
+    state.data = data;
+    // 不调用 currentSelections，也不替换主选/备选，完整保留编辑中的空课表和选择顺序。
+    state.recentlyFull = [...new Set([...state.recentlyFull, ...newlyFull])]
+      .filter((id) => offerById(id) && offeringAvailability(offerById(id)).full);
+    state.refreshError = false;
+    state.refreshMessage = "名额与授课信息已更新；每 15 秒自动刷新，当前选择已保留。";
+    renderAll();
+  } catch (error) {
+    if (version !== state.dataVersion || state.user !== user) return;
+    state.refreshError = true;
+    state.refreshMessage = `自动刷新失败：${error.message} 当前选择已保留，将在下一轮重试。`;
+    renderAvailabilityNotice();
+  } finally {
+    state.refreshInFlight = false;
+  }
 }
 
 function registrationLabel() {
@@ -284,7 +380,6 @@ function renderCourseCatalog() {
     return;
   }
 
-  const faculty = Object.fromEntries((catalog.faculty || []).map((item) => [item.facultyId, item.name]));
   const departments = Object.fromEntries((catalog.departments || []).map((item) => [item.departmentId, item.name]));
   const courses = Object.fromEntries((catalog.courses || []).map((item) => [item.courseId, item]));
   const search = document.getElementById("course-search").value.trim().toLowerCase();
@@ -304,26 +399,26 @@ function renderCourseCatalog() {
     const isPrimary = state.primary.includes(offering.offeringId);
     const isAlternate = state.alternate.includes(offering.offeringId);
     const selectedClass = isPrimary ? "selected-primary" : (isAlternate ? "selected-alternate" : "");
-    const external = Number(offering.enrolledCount || 0);
-    const local = Number(state.data.offeringCounts?.[offering.offeringId] || 0);
-    const occupied = external + local;
-    const capacity = Number(offering.capacity || 0);
-    const seats = capacity ? Math.max(0, capacity - occupied) : 0;
-    const offeringStatus = String(offering.status || "").toUpperCase();
-    const isOpen = ["OPEN", "开放"].includes(offeringStatus);
-    const statusFull = ["FULL", "已满"].includes(offeringStatus);
-    const full = !isOpen || statusFull || (capacity > 0 && seats <= 0);
-    const seatLabel = statusFull || (isOpen && capacity > 0 && seats <= 0)
-      ? "当前已满"
-      : (!isOpen ? "当前未开放" : `余 ${seats} 个名额`);
-    const primaryDisabled = !state.data.canEdit || (full && !isPrimary);
+    const availability = offeringAvailability(offering);
+    const full = availability.full || availability.unavailable;
+    const seatLabel = availability.label;
+    const teacher = state.data.teachingAssignments?.[offering.offeringId];
+    const prerequisiteIds = [...new Set((catalog.prerequisites || [])
+      .filter((item) => item.courseId === offering.courseId).map((item) => item.prerequisiteCourseId))];
+    const prerequisites = prerequisiteIds.length
+      ? prerequisiteIds.map((id) => `${id}${courses[id]?.title ? ` · ${courses[id].title}` : ""}`).join("；")
+      : "无先修要求";
+    const registered = (state.data.enrollments || []).some((item) => (
+      item.offering_id === offering.offeringId && item.enrollment_status === "ENROLLED"
+    ));
+    const primaryDisabled = !state.data.canEdit || (full && !isPrimary && !(availability.full && registered));
     const alternateDisabled = !state.data.canEdit || (full && !isAlternate);
     const days = (offering.days || []).map(dayName).join(" / ");
     return `<article class="course-card ${selectedClass}">
       <div class="course-card-top"><span class="course-dept">${escapeHtml(departments[course.departmentId] || course.departmentId || "课程")}</span><span class="course-code">${escapeHtml(offering.courseId)} · ${escapeHtml(offering.section || "01")}</span></div>
       <h3 title="${escapeHtml(course.title || offering.courseId)}">${escapeHtml(course.title || offering.courseId)}</h3>
       <p class="course-card-description">${escapeHtml(course.description || "课程目录提供的开课信息。")}</p>
-      <div class="course-facts"><span><b>教师</b>${escapeHtml(faculty[offering.facultyId] || offering.facultyId || "待安排")}</span><span><b>学分</b>${escapeHtml(course.credits || 0)}</span><span><b>时间</b>${escapeHtml(days)} ${escapeHtml(offering.startTime || "")}</span><span><b>地点</b>${escapeHtml(offering.room || "待定")}</span></div>
+      <div class="course-facts"><span title="${escapeHtml(teacher?.fullName || "尚未安排授课教师")}"><b>教师</b>${escapeHtml(teacher?.fullName || "尚未安排")}</span><span><b>学分</b>${escapeHtml(course.credits || 0)}</span><span><b>时间</b>${escapeHtml(days)} ${escapeHtml(offering.startTime || "")}</span><span><b>地点</b>${escapeHtml(offering.room || "待定")}</span><div class="course-prerequisites"><b>先修课程</b><span>${escapeHtml(prerequisites)}</span></div></div>
       <div class="course-card-bottom"><span class="seat-text ${full ? "full" : ""}">${escapeHtml(seatLabel)}</span><div class="course-actions"><button class="course-pick ${isPrimary ? "active-primary" : ""}" type="button" data-pick-kind="primary" data-offering-id="${escapeHtml(offering.offeringId)}" ${primaryDisabled ? "disabled" : ""}>${isPrimary ? "主选 ✓" : "设为主选"}</button><button class="course-pick ${isAlternate ? "active-alternate" : ""}" type="button" data-pick-kind="alternate" data-offering-id="${escapeHtml(offering.offeringId)}" ${alternateDisabled ? "disabled" : ""}>${isAlternate ? "备选 ✓" : "设为备选"}</button></div></div>
     </article>`;
   }).join("");
@@ -343,6 +438,7 @@ function renderCourseCatalog() {
   document.getElementById("register-hint").textContent = editable
     ? (state.data.previouslySubmitted ? "加退选期内，保存只更新草稿；提交后才会同步增退选。" : "可以先保存草稿，稍后再提交。")
     : "当前不在允许修改课表的时间段内。";
+  renderAvailabilityNotice();
 }
 
 function renderSchedule() {
@@ -496,6 +592,7 @@ async function login(event) {
 }
 
 async function logout() {
+  stopAvailabilityRefresh();
   try { await request("/api/logout", { method: "POST", body: {} }); }
   catch { /* 本地会话若已过期，仍清除网页状态并返回登录页。 */ }
   state.user = null;
@@ -560,5 +657,8 @@ document.getElementById("alternate-slots").addEventListener("click", (event) => 
 document.getElementById("save-draft").addEventListener("click", saveDraft);
 document.getElementById("submit-schedule").addEventListener("click", submitSchedule);
 document.getElementById("delete-schedule").addEventListener("click", deleteSchedule);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) refreshAvailability();
+});
 document.getElementById("today-label").textContent = new Intl.DateTimeFormat("en", { weekday: "long", month: "long", day: "numeric" }).format(new Date()).toUpperCase();
 restoreSession();

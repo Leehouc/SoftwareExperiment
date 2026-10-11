@@ -529,6 +529,15 @@ def _build_student_data(student_id: str, requested_semester: str | None) -> dict
             "SELECT offering_id, COUNT(*) AS total FROM enrollments "
             "WHERE enrollment_status = 'ENROLLED' GROUP BY offering_id",
         )
+        teaching_rows = _query_all(
+            connection,
+            "SELECT pos.offering_id, pos.professor_id, p.full_name, pos.selection_status "
+            "FROM professor_offering_selections pos "
+            "JOIN professors p ON p.professor_id = pos.professor_id "
+            "WHERE pos.semester_id = %s AND pos.selection_status IN ('SELECTED', 'CONFIRMED') "
+            "AND p.status = 'ACTIVE'",
+            (semester_id,),
+        )
     finally:
         connection.close()
 
@@ -568,6 +577,13 @@ def _build_student_data(student_id: str, requested_semester: str | None) -> dict
         "enrollments": enrollments,
         "transcript": transcript,
         "offeringCounts": {str(row["offering_id"]): int(row["total"]) for row in count_rows},
+        "teachingAssignments": {
+            str(row["offering_id"]): {
+                "professorId": str(row["professor_id"]), "fullName": row["full_name"],
+                "selectionStatus": row["selection_status"],
+            }
+            for row in teaching_rows
+        },
         "catalog": catalog,
         "catalogError": catalog_error,
         "canEdit": can_edit,
