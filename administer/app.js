@@ -146,7 +146,7 @@
       const department = state.data.catalog.departments.find((item) => item.departmentId === person.departmentId)?.name || person.departmentId;
       return `<tr><td><div class="person-cell"><span class="person-avatar ${isStudent ? "" : "purple"}">${esc((person.fullName || "?").slice(0, 1))}</span><span class="person-name"><b>${esc(person.fullName)}</b><small>${esc(person.username)}</small></span></div></td>
         <td><span>${esc(person.id)}</span></td><td>${isStudent ? dateText(person.graduationDate) : esc(department)}</td><td>${dateText(person.dateOfBirth)}</td><td>${pill(active ? "ACTIVE" : person.status)}</td>
-        <td><div class="table-actions"><button class="row-action" data-action="edit" data-kind="${kind}" data-id="${esc(person.id)}">编辑</button>${active ? `<button class="row-action delete" data-action="deactivate" data-kind="${kind}" data-id="${esc(person.id)}">停用</button>` : ""}</div></td></tr>`;
+        <td><div class="table-actions"><button class="row-action" data-action="edit" data-kind="${kind}" data-id="${esc(person.id)}">编辑</button>${!isStudent ? `<button class="row-action" data-action="eligibility" data-id="${esc(person.id)}">授课资格（${(person.eligibleCourseIds || []).length}）</button>` : ""}${active ? `<button class="row-action delete" data-action="deactivate" data-kind="${kind}" data-id="${esc(person.id)}">停用</button>` : ""}</div></td></tr>`;
     }).join("");
     return `${heading(title, description, `<button class="button primary" data-action="add" data-kind="${kind}">＋ 新增${isStudent ? "学生" : "教师"}</button>`)}
       <article class="table-panel"><div class="panel-head"><div><h2>人员列表</h2><p>共 ${list.length} 条记录 · 停用账户不能登录</p></div><div class="table-tools"><label class="searchbox"><input id="people-search" type="search" value="${esc(state.query)}" placeholder="搜索姓名、编号或用户名" aria-label="搜索人员"></label><select id="status-filter" class="filter-select" aria-label="筛选状态"><option value="ALL" ${state.statusFilter === "ALL" ? "selected" : ""}>全部状态</option><option value="ACTIVE" ${state.statusFilter === "ACTIVE" ? "selected" : ""}>在读 / 在职</option><option value="INACTIVE" ${state.statusFilter === "INACTIVE" ? "selected" : ""}>已停用</option>${isStudent ? `<option value="GRADUATED" ${state.statusFilter === "GRADUATED" ? "selected" : ""}>已毕业</option>` : ""}</select></div></div>
@@ -204,12 +204,25 @@
       : field("所属院系", "departmentId", person?.departmentId || "", { select: departments, required: true });
     content += field("档案状态", "status", person?.status || "ACTIVE", { select: statuses });
     content += field("登录用户名", "username", person?.username || "", { required: true, autocomplete: "username" });
+    if (!isStudent) content += eligibilityFields(person?.eligibleCourseIds || []);
     content += field(person ? "重置密码（可留空）" : "初始密码", "password", "", { type: "password", required: !person, minLength: 10, autocomplete: person ? "new-password" : "new-password", placeholder: person ? "不修改请留空" : "至少 10 位" });
     content += field("社会安全号码（可选）", "ssn", "", { span: true, hint: "系统使用 AES-GCM 加密保存，不会在档案列表中显示。编辑时留空表示保留现有值。" });
     if (person) content += `<label class="checkline span-2"><input type="checkbox" name="clearSsn">清除已保存的加密号码</label>`;
     $("#dialog-fields").innerHTML = content;
     $("#record-form").dataset.kind = kind;
     dialog.showModal();
+  }
+
+  function eligibilityFields(selectedIds) {
+    const selected = new Set(selectedIds);
+    const courses = state.data.catalog.courses || [];
+    const availableIds = new Set(courses.map((course) => course.courseId));
+    const choices = [...courses, ...selectedIds.filter((id) => !availableIds.has(id))
+      .map((id) => ({ courseId: id, title: "归档课程（可保留或移除）" }))];
+    return `<fieldset class="eligibility-fields span-2" id="eligibility-fields"><legend>授课资格</legend>
+      <p class="field-hint">勾选教师可讲授的课程，可跨院系选择。撤销资格不撤回已有授课；已有班次撤回后不能再次选择。</p>
+      <div class="eligibility-list">${choices.map((course) => `<label class="checkline"><input type="checkbox" name="eligibleCourseIds" value="${esc(course.courseId)}" ${selected.has(course.courseId) ? "checked" : ""}><span>${esc(course.courseId)} · ${esc(course.title || course.courseId)}</span></label>`).join("") || '<p class="field-hint">课程目录暂无课程，请补齐目录后配置资格。</p>'}</div>
+      <p class="field-hint">未勾选任何课程时，教师暂不能新增授课班次。</p></fieldset>`;
   }
 
   function bindPage() {
@@ -219,6 +232,13 @@
       const group = button.dataset.kind === "student" ? state.data.students : state.data.professors;
       const person = group.find((item) => item.id === button.dataset.id);
       if (person) openRecord(button.dataset.kind, person);
+    }));
+    document.querySelectorAll("[data-action='eligibility']").forEach((button) => button.addEventListener("click", () => {
+      const person = state.data.professors.find((item) => item.id === button.dataset.id);
+      if (!person) return;
+      openRecord("professor", person);
+      $("#eligibility-fields").scrollIntoView({ block: "nearest" });
+      $("#eligibility-fields input")?.focus();
     }));
     document.querySelectorAll("[data-action='deactivate']").forEach((button) => button.addEventListener("click", async () => {
       const kindName = button.dataset.kind === "student" ? "学生" : "教师";
@@ -293,12 +313,14 @@
     body.clearSsn = form.get("clearSsn") === "on";
     const current = state.edit;
     if (!current) return;
+    if (current.kind === "professor") body.eligibleCourseIds = form.getAll("eligibleCourseIds");
     const endpoint = current.kind === "student" ? "students" : "professors";
     const url = current.id ? `/api/admin/${endpoint}/${encodeURIComponent(current.id)}` : `/api/admin/${endpoint}`;
     try {
       await api(url, { method: current.id ? "PUT" : "POST", body: JSON.stringify(body) });
       dialog.close();
       toast(current.id ? "档案已保存。" : "档案已创建。", "success");
+      if (current.kind === "professor" && !body.eligibleCourseIds.length) toast("尚未配置授课资格；教师暂不能新增授课班次。");
       await refreshData();
     } catch (error) { toast(error.message, "error"); }
   });

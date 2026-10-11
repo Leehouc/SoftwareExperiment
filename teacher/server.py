@@ -310,12 +310,15 @@ def _build_teacher_data(professor_id: str, requested_semester: str | None) -> di
         assignment_by_offering = {str(row["offering_id"]): row for row in assignments}
         offers = []
         for offering_id, offering in catalog_offerings.items():
-            if offering.get("semesterId") != semester_id or offering.get("courseId") not in eligible_ids:
+            if offering.get("semesterId") != semester_id:
                 continue
             assignment = assignment_by_offering.get(offering_id)
             owner = str(assignment["professor_id"]) if assignment else None
             active = bool(assignment and assignment["selection_status"] in ACTIVE_ASSIGNMENT_STATES)
             owned_by_me = bool(assignment and owner == professor_id)
+            qualified = offering.get("courseId") in eligible_ids
+            if not qualified and not (owned_by_me and active):
+                continue
             offers.append(
                 {
                     **offering,
@@ -323,6 +326,7 @@ def _build_teacher_data(professor_id: str, requested_semester: str | None) -> di
                     "selected": owned_by_me and active,
                     "reservedByOther": active and owner != professor_id,
                     "assignmentStatus": assignment["selection_status"] if assignment else None,
+                    "retainedWithoutEligibility": not qualified,
                 }
             )
 
@@ -396,12 +400,17 @@ def _save_teaching_selection(
             (professor_id,),
         )
         eligible_courses = {str(row["course_id"]) for row in eligible_rows}
+        locked_rows = _selection_state(connection, professor_id, semester_id, lock=True)
+        assignment_by_offering = {str(row["offering_id"]): row for row in locked_rows}
         issues = []
         selected_offerings: list[dict[str, Any]] = []
         for offering_id in offering_ids:
             offering = offerings[offering_id]
             course_id = str(offering.get("courseId", ""))
-            if course_id not in eligible_courses:
+            assignment = assignment_by_offering.get(offering_id)
+            retained = bool(assignment and str(assignment["professor_id"]) == professor_id
+                            and assignment["selection_status"] in ACTIVE_ASSIGNMENT_STATES)
+            if course_id not in eligible_courses and not retained:
                 issues.append(f"你没有资格讲授课程 {course_id}。")
             if str(offering.get("status", "")).upper() not in {"OPEN", "开放", "FULL", "已满"}:
                 issues.append(f"开课 {offering_id} 当前未开放。")
@@ -414,8 +423,6 @@ def _save_teaching_selection(
                         f"{first.get('offeringId')} 与 {second.get('offeringId')} 上课时间冲突。"
                     )
 
-        locked_rows = _selection_state(connection, professor_id, semester_id, lock=True)
-        assignment_by_offering = {str(row["offering_id"]): row for row in locked_rows}
         for offering_id in sorted(offering_ids):
             row = assignment_by_offering.get(offering_id)
             if (

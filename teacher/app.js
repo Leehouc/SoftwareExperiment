@@ -239,7 +239,7 @@ function renderTeachingSelection() {
       <div class="course-card-top"><span class="course-dept">${escapeHtml(departments[course.departmentId] || course.departmentId || "课程")}</span><span class="course-code">${escapeHtml(offering.courseId)} · ${escapeHtml(offering.section || "01")}</span></div>
       <h3>${escapeHtml(course.title || offering.courseId)}</h3>
       <p class="course-description">${escapeHtml(course.description || "课程目录提供的开课信息。")}</p>
-      <div class="course-facts"><span><b>资格</b>${escapeHtml(offering.courseId)}</span><span><b>教师</b>${escapeHtml(faculty[offering.facultyId] || offering.facultyId || "待安排")}</span><span><b>时间</b>${escapeHtml(offeringTime(offering))}</span><span><b>地点</b>${escapeHtml(offering.room || "待定")}</span></div>
+      <div class="course-facts"><span><b>资格</b>${offering.retainedWithoutEligibility ? "资格已撤销，仅保留已有授课" : escapeHtml(offering.courseId)}</span><span><b>教师</b>${escapeHtml(faculty[offering.facultyId] || offering.facultyId || "待安排")}</span><span><b>时间</b>${escapeHtml(offeringTime(offering))}</span><span><b>地点</b>${escapeHtml(offering.room || "待定")}</span></div>
       <div class="course-card-bottom"><span class="course-status ${statusClass}">${escapeHtml(stateLabel)}</span><button class="course-toggle" type="button" data-offering-id="${escapeHtml(offering.offeringId)}" ${disabled ? "disabled" : ""}>${selected ? "取消选择" : "选择授课"}</button></div>
     </article>`;
   }).join("");

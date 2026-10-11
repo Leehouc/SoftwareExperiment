@@ -33,6 +33,8 @@
 
 ## 环境要求
 
+人员维护的补充约定见 [需求说明](docs/personnel-requirements.md) 与 [设计说明](docs/personnel-design.md)，包括教师资格配置，以及原题人员删除需求采用逻辑删除时与停用、物理删除的区别。
+
 - Windows 开发时建议在项目目录打开 PowerShell。
 - Python 3.10 或更新版本。本文命令使用 Windows Python 启动器 `py -3`，即使终端里的 `python` 指向 MSYS2 也可以运行。
 - 只运行课程目录 API 和网页时不需要安装第三方 Python 包。

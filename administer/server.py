@@ -211,6 +211,14 @@ def _record_data(catalog: dict[str, Any]) -> dict[str, Any]:
             "u.is_active AS accountActive, p.created_at AS createdAt "
             "FROM professors p JOIN app_users u ON u.user_id = p.user_id ORDER BY p.full_name",
         )
+        eligibility = _query_all(
+            connection, "SELECT professor_id, course_id FROM professor_course_eligibility ORDER BY course_id",
+        )
+        by_professor: dict[str, list[str]] = {}
+        for row in eligibility:
+            by_professor.setdefault(str(row["professor_id"]), []).append(str(row["course_id"]))
+        for professor in professors:
+            professor["eligibleCourseIds"] = by_professor.get(str(professor["id"]), [])
         periods = _query_all(
             connection,
             "SELECT semester_id AS semesterId, registration_status AS status, "
@@ -251,8 +259,43 @@ def _audit_actor(session: dict[str, Any]) -> str:
     return str(session["user"]["userId"])
 
 
+def _eligible_courses_from_body(body: dict[str, Any], *, creating: bool) -> list[str] | None:
+    if "eligibleCourseIds" not in body:
+        return [] if creating else None
+    ids = body["eligibleCourseIds"]
+    if not isinstance(ids, list) or any(not isinstance(item, str) or not item.strip() or len(item) > 32 for item in ids):
+        raise ApiError("授课资格必须是课程编号列表。")
+    return sorted(set(ids))
+
+
+def _replace_eligibility(connection: Any, professor_id: str, course_ids: list[str],
+                         session: dict[str, Any], catalog: dict[str, Any]) -> None:
+    # 调用端先锁定教师档案，与教师保存授课选择共用该行锁。
+    old = sorted(str(row["course_id"]) for row in _query_all(
+        connection, "SELECT course_id FROM professor_course_eligibility WHERE professor_id = %s FOR UPDATE",
+        (professor_id,),
+    ))
+    valid_ids = {str(course["courseId"]) for course in catalog["courses"]}
+    unknown = sorted(set(course_ids) - valid_ids - set(old))
+    if unknown:
+        raise ApiError(f"课程目录中找不到授课资格课程：{'、'.join(unknown)}。")
+    if old == course_ids:
+        return
+    cursor = connection.cursor()
+    try:
+        cursor.execute("DELETE FROM professor_course_eligibility WHERE professor_id = %s", (professor_id,))
+        for course_id in course_ids:
+            cursor.execute("INSERT INTO professor_course_eligibility (professor_id, course_id) VALUES (%s, %s)",
+                           (professor_id, course_id))
+    finally:
+        cursor.close()
+    _insert_audit(connection, _audit_actor(session), "UPDATE_PROFESSOR_ELIGIBILITY", "PROFESSOR",
+                  professor_id, {"before": old, "after": course_ids})
+
+
 def _create_profile(kind: str, body: dict[str, Any], session: dict[str, Any], catalog: dict[str, Any]) -> dict[str, str]:
     values = _validate_profile(body, kind, creating=True)
+    eligible_ids = _eligible_courses_from_body(body, creating=True) if kind == "professor" else None
     if kind == "professor" and values["department_id"] not in {
         str(item.get("departmentId")) for item in catalog["departments"]
     }:
@@ -287,6 +330,8 @@ def _create_profile(kind: str, body: dict[str, Any], session: dict[str, Any], ca
                 )
         finally:
             cursor.close()
+        if eligible_ids is not None:
+            _replace_eligibility(connection, record_id, eligible_ids, session, catalog)
         _insert_audit(connection, _audit_actor(session), f"CREATE_{kind.upper()}_PROFILE", kind.upper(),
                       record_id, {"username": values["username"]})
     return {"id": record_id, "username": values["username"]}
@@ -295,6 +340,7 @@ def _create_profile(kind: str, body: dict[str, Any], session: dict[str, Any], ca
 def _update_profile(kind: str, record_id: str, body: dict[str, Any], session: dict[str, Any],
                     catalog: dict[str, Any]) -> None:
     values = _validate_profile(body, kind, creating=False)
+    eligible_ids = _eligible_courses_from_body(body, creating=False) if kind == "professor" else None
     if kind == "professor" and values["department_id"] not in {
         str(item.get("departmentId")) for item in catalog["departments"]
     }:
@@ -342,6 +388,8 @@ def _update_profile(kind: str, record_id: str, body: dict[str, Any], session: di
                 )
         finally:
             cursor.close()
+        if eligible_ids is not None:
+            _replace_eligibility(connection, record_id, eligible_ids, session, catalog)
         _insert_audit(connection, _audit_actor(session), f"UPDATE_{kind.upper()}_PROFILE", kind.upper(),
                       record_id, {"username": values["username"], "status": values["status"]})
 
