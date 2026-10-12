@@ -14,3 +14,4 @@
 .eligibility-fields{min-width:0;margin:0;padding:12px;border:1px solid var(--line);border-radius:8px}.eligibility-fields legend{font-size:11px;font-weight:600;color:#586575}.eligibility-list{display:grid;gap:8px;max-height:190px;overflow:auto;padding:8px 0}.eligibility-list .checkline{align-items:flex-start}.eligibility-list .checkline input{flex:0 0 14px;margin:1px 0}.eligibility-list span{overflow-wrap:anywhere}.eligibility-fields .field-hint{margin:0}
 
 .demo-load-button{margin-left:auto;padding:5px 9px;border:1px solid #dce5ed;border-radius:6px;background:#f8fafc;color:#526b83;font-size:9px;font-weight:700}.demo-load-button:hover{background:#edf3f8}
+.registration-card .close-phase{margin:12px 0 6px;color:#526b83;line-height:1.65}

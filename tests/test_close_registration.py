@@ -80,7 +80,7 @@ class CloseRegistrationTestCase(unittest.TestCase):
         today = date.today()
         self.db.execute(
             "INSERT INTO registration_periods VALUES ('TERM', 'OPEN', ?, ?, ?, ?, NULL)",
-            ((today - timedelta(days=1)).isoformat(), (today + timedelta(days=1)).isoformat()) * 2,
+            ((today - timedelta(days=10)).isoformat(), (today - timedelta(days=1)).isoformat()) * 2,
         )
         self.db.executemany(
             "INSERT INTO student_schedules (schedule_id, student_id, semester_id, status) "
