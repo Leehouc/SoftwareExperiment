@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f7fb">
+  <title>课程注册系统 · 统一入口</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="topbar"><a class="brand" href="./"><span class="brand-mark">CR</span><span>课程注册系统<small>COURSE REGISTRATION</small></span></a><span class="topbar-note">统一访问入口</span></header>
+  <main>
+    <div class="intro"><span class="eyebrow">YOUR NEXT CHAPTER</span><h1>学习与教学，<br>从这里开始。</h1><p>请选择您的身份，进入对应的登录页面。</p></div>
+    <nav class="role-grid" aria-label="选择登录身份">
+      <a class="role student" data-port="8020" href="http://127.0.0.1:8020/">
+        <span class="role-number">01 / STUDENT</span>
+        <svg class="role-icon" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M8 10h12c3 0 4 2 4 4v26c0-3-2-5-5-5H8V10Zm32 0H28c-3 0-4 2-4 4v26c0-3 2-5 5-5h11V10Z"/><path d="M13 18h6m-6 6h6m10-6h6m-6 6h6"/></svg>
+        <h2>学生登录</h2><p>选择课程，安排课表，查看成绩。</p><span class="role-action">进入学生门户<span aria-hidden="true">↗</span></span>
+      </a>
+      <a class="role teacher" data-port="8030" href="http://127.0.0.1:8030/">
+        <span class="role-number">02 / FACULTY</span>
+        <svg class="role-icon" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m4 17 20-9 20 9-20 9-20-9Z"/><path d="M12 21v10c7 6 17 6 24 0V21m7-3v14m-2 0h4"/></svg>
+        <h2>教师登录</h2><p>选择授课，查看名册，录入成绩。</p><span class="role-action">进入教师工作台<span aria-hidden="true">↗</span></span>
+      </a>
+      <a class="role admin" data-port="8040" href="http://127.0.0.1:8040/">
+        <span class="role-number">03 / REGISTRAR</span>
+        <svg class="role-icon" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="10" y="8" width="28" height="33" rx="3"/><path d="M17 8V5h14v3M17 18h14m-14 7h14m-14 7h8"/></svg>
+        <h2>管理员登录</h2><p>维护人员，管理注册，核对账单。</p><span class="role-action">进入教务管理<span aria-hidden="true">↗</span></span>
+      </a>
+    </nav>
+  </main>
+  <footer><span>课程注册系统</span><span>学生 · 教师 · 教务管理</span></footer>
+</body>
+</html>
