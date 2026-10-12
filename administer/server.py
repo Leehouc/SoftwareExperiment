@@ -12,7 +12,7 @@ import secrets
 import sys
 import threading
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -194,6 +194,38 @@ def _validate_profile(body: dict[str, Any], kind: str, *, creating: bool) -> dic
     return result
 
 
+def _registration_close_state(period: dict[str, Any], *, today: date | None = None) -> dict[str, Any]:
+    """最终结算须等待所有选课窗口结束；截止日期当天仍可编辑。"""
+    state = {"canClose": False, "closeAvailableOn": None, "closeReason": ""}
+    status = str(period.get("registration_status", "")).upper()
+    if status != "OPEN":
+        state["closeReason"] = "该注册期已经关闭，不能重复结算。" if status == "CLOSED" else "该注册期尚未开放。"
+        return state
+    dates = []
+    for key in ("registration_start_at", "registration_end_at", "add_drop_start_at", "add_drop_end_at"):
+        value = period.get(key)
+        try:
+            dates.append(value.date() if isinstance(value, datetime) else date.fromisoformat(str(value)))
+        except (ValueError, TypeError):
+            state["closeReason"] = "注册或加退选日期配置不完整，暂不能关闭。"
+            return state
+    registration_start, registration_end, add_drop_start, add_drop_end = dates
+    if registration_start > registration_end or add_drop_start > add_drop_end:
+        state["closeReason"] = "注册或加退选日期顺序无效，暂不能关闭。"
+        return state
+    last_edit_date = max(registration_end, add_drop_end)
+    if last_edit_date == date.max:
+        state["closeReason"] = "选课截止日期超出可结算范围，暂不能关闭。"
+        return state
+    available_on = last_edit_date + timedelta(days=1)
+    state["closeAvailableOn"] = available_on.isoformat()
+    if (today or date.today()) < available_on:
+        state["closeReason"] = f"注册及加退选尚未全部结束，最早可于 {available_on.isoformat()} 关闭结算。"
+        return state
+    state.update(canClose=True, closeReason="注册及加退选均已结束，可以关闭并结算。")
+    return state
+
+
 def _record_data(catalog: dict[str, Any]) -> dict[str, Any]:
     connection = get_connection()
     try:
@@ -243,6 +275,11 @@ def _record_data(catalog: dict[str, Any]) -> dict[str, Any]:
     for period in periods:
         semester = catalog_semesters.get(str(period["semesterId"]), {})
         period["name"] = semester.get("name", period["semesterId"])
+        period.update(_registration_close_state({
+            "registration_status": period["status"],
+            "registration_start_at": period["registrationStartAt"], "registration_end_at": period["registrationEndAt"],
+            "add_drop_start_at": period["addDropStartAt"], "add_drop_end_at": period["addDropEndAt"],
+        }))
     return {
         "students": students,
         "professors": professors,
@@ -527,22 +564,15 @@ def _close_registration(semester_id: str, session: dict[str, Any], catalog: dict
     with transaction() as connection:
         period = _query_one(
             connection,
-            "SELECT registration_status, registration_start_at, registration_end_at "
+            "SELECT registration_status, registration_start_at, registration_end_at, add_drop_start_at, add_drop_end_at "
             "FROM registration_periods WHERE semester_id = %s FOR UPDATE",
             (semester_id,),
         )
         if period is None:
             raise ApiError("找不到所选注册期。", 404)
-        if str(period["registration_status"]).upper() != "OPEN":
-            raise ApiError("该注册期已经关闭或尚未开放，没有执行任何更改。", 409)
-        start_date = period["registration_start_at"]
-        end_date = period["registration_end_at"]
-        if isinstance(start_date, datetime):
-            start_date = start_date.date()
-        if isinstance(end_date, datetime):
-            end_date = end_date.date()
-        if not isinstance(start_date, date) or not isinstance(end_date, date) or not start_date <= date.today() <= end_date:
-            raise ApiError("当前日期不在该学期的注册窗口内，没有执行任何更改。", 409)
+        close_state = _registration_close_state(period)
+        if not close_state["canClose"]:
+            raise ApiError(str(close_state["closeReason"]), 409)
         assignments_rows = _query_all(
             connection,
             "SELECT p.offering_id AS offeringId, p.selection_status AS status, p.professor_id AS professorId, "

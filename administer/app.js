@@ -16,7 +16,7 @@
     return Number.isNaN(date.getTime()) ? String(value).slice(0, 10) : new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "short", day: "numeric" }).format(date);
   };
   const money = (cents) => new Intl.NumberFormat("zh-CN", { style: "currency", currency: "CNY", maximumFractionDigits: 2 }).format(Number(cents || 0) / 100);
-  const statusLabel = (status) => ({ ACTIVE: "在职 / 在读", INACTIVE: "已停用", GRADUATED: "已毕业", OPEN: "注册开放", CLOSED: "已关闭", PENDING: "待发送", RETRY: "等待重试", SENT: "已发送", FAILED: "发送失败" }[String(status || "").toUpperCase()] || status || "未知");
+  const statusLabel = (status) => ({ ACTIVE: "在职 / 在读", INACTIVE: "已停用", GRADUATED: "已毕业", OPEN: "尚未关闭", CLOSED: "已关闭", PENDING: "待发送", RETRY: "等待重试", SENT: "已发送", FAILED: "发送失败" }[String(status || "").toUpperCase()] || status || "未知");
   const statusClass = (status) => ({ ACTIVE: "green", OPEN: "green", SENT: "green", PENDING: "amber", RETRY: "amber", FAILED: "red", INACTIVE: "gray", GRADUATED: "gray", CLOSED: "gray" }[String(status || "").toUpperCase()] || "gray");
 
   async function api(path, options = {}) {
@@ -158,15 +158,18 @@
     const periods = state.data.periods;
     const openCount = periods.filter((item) => item.status === "OPEN").length;
     const cards = periods.map((period) => {
-      const canClose = period.status === "OPEN";
+      const open = period.status === "OPEN";
+      const canClose = open && period.canClose === true;
       return `<article class="registration-card"><div class="registration-card-top"><div><h3>${esc(period.name)}</h3><p>学期编号：${esc(period.semesterId)}</p></div>${pill(period.status)}</div>
         <div class="date-row"><div class="date-pair"><small>选课注册</small><b>${dateText(period.registrationStartAt)} — ${dateText(period.registrationEndAt)}</b></div><div class="date-pair"><small>加退选</small><b>${dateText(period.addDropStartAt)} — ${dateText(period.addDropEndAt)}</b></div></div>
         ${period.closedAt ? `<div class="date-row"><div class="date-pair"><small>关闭时间</small><b>${dateText(period.closedAt)}</b></div></div>` : ""}
-        ${canClose ? `<div class="card-actions"><button class="button primary" data-action="close-registration" data-semester="${esc(period.semesterId)}" data-name="${esc(period.name)}">关闭本学期注册 →</button></div>` : ""}</article>`;
+        <p class="close-phase">${esc(period.closeReason || "请刷新状态以读取关闭阶段。")}</p>
+        ${open && period.closeAvailableOn ? `<p>最早关闭日期：${dateText(period.closeAvailableOn)}</p>` : ""}
+        ${open ? `<div class="card-actions"><button class="button primary" data-action="close-registration" data-semester="${esc(period.semesterId)}" data-name="${esc(period.name)}" ${canClose ? "" : "disabled"}>关闭本学期注册 →</button></div>` : ""}</article>`;
     }).join("");
-    return `${heading("注册期管理", "核对注册窗口，并在选课结束后结算当学期注册。", `<span class="pill ${openCount ? "green" : "gray"}">${openCount} 个开放</span>`)}
+    return `${heading("注册期管理", "注册与加退选均结束后，才能执行最终关闭与结算。", `<span class="pill ${openCount ? "green" : "gray"}">${openCount} 个未关闭</span><button class="button subtle" data-action="refresh-registration">刷新状态</button>`)}
       <section class="registration-grid"><div>${cards || `<article class="panel empty-state">数据库中没有注册期记录。</article>`}</div>
-        <aside><article class="registration-card"><div class="eyebrow">关闭流程</div><h3>确认后将执行</h3><p>关闭属于事务操作，完成后不能通过本页面重新开放。</p><div class="date-row"><div class="date-pair"><small>最低开课人数</small><b>${state.data.minimumEnrollment} 名学生</b></div><div class="date-pair"><small>每份课表上限</small><b>4 门课程</b></div></div></article>
+        <aside><article class="registration-card"><div class="eyebrow">关闭流程</div><h3>确认后将执行</h3><p>各截止日期当天仍允许选课；最早在较晚截止日期的次日关闭。跨日后可刷新状态。完成后不能通过本页面重新开放。</p><div class="date-row"><div class="date-pair"><small>最低开课人数</small><b>${state.data.minimumEnrollment} 名学生</b></div><div class="date-pair"><small>每份课表上限</small><b>4 门课程</b></div></div></article>
           <div class="info-callout"><b>替代课与开课检查</b>优先保留有效主选，再按顺序尝试备选；检查授课教师、容量、先修课和时间冲突。低于最低人数或未分配教师的课程会被取消。</div>
           <div class="info-callout warning"><b>账单处理</b>关闭注册时按每学分 ¥${(state.data.feePerCreditCents / 100).toFixed(2)} 计算金额并写入队列；配置账单接口后，服务会发送并重试。</div>
         </aside></section>`;
@@ -226,6 +229,7 @@
   }
 
   function bindPage() {
+    document.querySelectorAll("[data-action='refresh-registration']").forEach((button) => button.addEventListener("click", refreshData));
     document.querySelectorAll("[data-view-link]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.viewLink)));
     document.querySelectorAll("[data-action='add']").forEach((button) => button.addEventListener("click", () => openRecord(button.dataset.kind)));
     document.querySelectorAll("[data-action='edit']").forEach((button) => button.addEventListener("click", () => {
@@ -261,6 +265,7 @@
       } catch (error) {
         button.disabled = false;
         toast(error.message, "error");
+        await refreshData();
       }
     }));
     const search = $("#people-search");
