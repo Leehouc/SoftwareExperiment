@@ -12,7 +12,7 @@
 | `dashboard.py` | 课程目录浏览网页，并将请求转发给 `app.py`。默认监听 `127.0.0.1:8001`，因此必须先启动 `app.py`。 |
 | `student/` | 独立的学生注册可视化网页及后端 API。支持学生登录、选择/保存/提交课表、加退选期修改和查看成绩单；默认监听 `127.0.0.1:8020`。启动前须先启动 MySQL 和 `app.py`。 |
 | `teacher/` | 独立的教师工作台及后端 API。支持教师登录、选择授课课程、查看本人班级名册和录入成绩；默认监听 `127.0.0.1:8030`。启动前须先启动 MySQL 和 `app.py`。 |
-| `administer/` | 独立的注册管理员工作台及后端 API。支持学生/教师档案和账户维护、关闭注册期、查看账单队列；默认监听 `127.0.0.1:8040`。启动前须先启动 MySQL 和 `app.py`。 |
+| `administer/` | 独立的注册管理员工作台及后端 API。支持学生/教师档案维护、查看学期课程与任课教师/人数、关闭或重新开放注册期和查看账单队列；课程情况从独立页面打开。默认监听 `127.0.0.1:8040`，启动前须先启动 MySQL 和 `app.py`。 |
 | `newdatabaseTest1.0/` | MySQL 数据库只读检查网页，可查看表记录数和演示数据预览。 |
 | `data/catalog.json` | 虚拟课程目录数据，包括院系、教师、学期、课程、先修关系和开课。用于没有真实 Ingres 数据库时开发和演示。 |
 | `init_database.py` | 创建并填充本地 SQLite 业务数据库；虚构学生、教师、教务员、选课、成绩等演示数据在此初始化。 |
@@ -140,7 +140,7 @@ with transaction() as connection:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\student\start.ps1
 ```
 
-输入 MySQL 应用账号密码后，打开 <http://127.0.0.1:8020>。演示账号为 `student.lin` / `StudentDemo1!` 和 `student.chen` / `StudentDemo2!`。学生网页详细说明见 [student/README.md](student/README.md)。
+输入 MySQL 应用账号密码后，打开 <http://127.0.0.1:8020>。学生登录页可一键填入 7 个演示账号。已有 MySQL 数据库迁移完成后，先运行 `py -3 .\database\seed_demo_students_mysql.py` 补入新增的 5 个学生账号；用户名和密码见 [student/README.md](student/README.md)。
 
 ### 6. 启动教师工作台
 
@@ -160,7 +160,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\teacher\start.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\administer\start.ps1
 ```
 
-输入 MySQL 应用账号密码后，打开 <http://127.0.0.1:8040>。教务员演示账号为 `registrar.demo` / `RegistrarDemo1!`。新增人员会创建对应的登录用户；停用会保留历史关联。社会安全号码是可选字段，录入前需要按 [administer/README.md](administer/README.md) 配置 AES-GCM 密钥。注册关闭时产生的账单会进入 `billing_transactions` 队列；如配置 `BILLING_API_URL`，模块会发送并重试失败账单。注册管理员详细说明见 [administer/README.md](administer/README.md)。
+输入 MySQL 应用账号密码后，打开 <http://127.0.0.1:8040>。登录页可一键填入教务员演示账号 `registrar.demo` / `RegistrarDemo1!`。新增人员会创建对应的登录用户；停用会保留历史关联。社会安全号码是可选字段，录入前需要按 [administer/README.md](administer/README.md) 配置 AES-GCM 密钥。注册关闭时产生的账单会进入 `billing_transactions` 队列；如配置 `BILLING_API_URL`，模块会发送并重试失败账单。注册管理员详细说明见 [administer/README.md](administer/README.md)。
 
 ## 课程目录 API
 

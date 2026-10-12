@@ -15,6 +15,7 @@
     {"facultyId": "P1006", "name": "阿米娜·约翰逊教授"}
   ],
   "semesters": [
+    {"semesterId": "2026-SPRING", "name": "2026年春季学期", "startDate": "2026-01-12", "endDate": "2026-05-08"},
     {"semesterId": "2026-FALL", "name": "2026年秋季学期", "startDate": "2026-09-01", "endDate": "2026-12-18"},
     {"semesterId": "2027-SPRING", "name": "2027年春季学期", "startDate": "2027-01-11", "endDate": "2027-05-07"}
   ],
@@ -26,7 +27,11 @@
     {"courseId": "MATH210", "title": "离散数学", "departmentId": "MATH", "credits": 3, "description": "学习逻辑、集合、组合数学、图论与证明方法。"},
     {"courseId": "MATH110", "title": "大学代数", "departmentId": "MATH", "credits": 3, "description": "学习函数、方程、不等式及代数建模。"},
     {"courseId": "STAT220", "title": "统计学导论", "departmentId": "MATH", "credits": 3, "description": "学习描述统计、概率、参数估计与假设检验。"},
-    {"courseId": "BUS205", "title": "管理学原理", "departmentId": "BUS", "credits": 3, "description": "学习组织管理、领导力、决策方法与管理实践。"}
+    {"courseId": "BUS205", "title": "管理学原理", "departmentId": "BUS", "credits": 3, "description": "学习组织管理、领导力、决策方法与管理实践。"},
+    {"courseId": "CS105", "title": "计算机与信息素养", "departmentId": "CS", "credits": 3, "description": "了解计算机系统、信息检索、数据安全与常用数字工具。"},
+    {"courseId": "CS230", "title": "Web应用开发", "departmentId": "CS", "credits": 3, "description": "学习网页前端、服务端接口与数据库驱动的Web应用开发。"},
+    {"courseId": "CS240", "title": "软件质量与测试", "departmentId": "CS", "credits": 3, "description": "学习测试设计、自动化测试、缺陷跟踪与软件质量保障。"},
+    {"courseId": "BUS110", "title": "商业数据分析基础", "departmentId": "BUS", "credits": 3, "description": "使用表格、基础统计和可视化方法分析常见商业问题。"}
   ],
   "prerequisites": [
     {"courseId": "CS201", "prerequisiteCourseId": "CS101"},
@@ -35,6 +40,9 @@
     {"courseId": "STAT220", "prerequisiteCourseId": "MATH110"}
   ],
   "courseOfferings": [
+    {"offeringId": "2026S-CS101-01", "courseId": "CS101", "semesterId": "2026-SPRING", "facultyId": "P1001", "section": "01", "days": ["MON", "WED"], "startTime": "09:00", "endTime": "10:15", "room": "科学楼201", "capacity": 10, "enrolledCount": 2, "status": "已结束"},
+    {"offeringId": "2026S-CS201-01", "courseId": "CS201", "semesterId": "2026-SPRING", "facultyId": "P1002", "section": "01", "days": ["TUE", "THU"], "startTime": "10:30", "endTime": "11:45", "room": "科学楼105", "capacity": 10, "enrolledCount": 2, "status": "已结束"},
+    {"offeringId": "2026S-MATH110-01", "courseId": "MATH110", "semesterId": "2026-SPRING", "facultyId": "P1005", "section": "01", "days": ["MON", "WED", "FRI"], "startTime": "11:00", "endTime": "11:50", "room": "教学楼115", "capacity": 10, "enrolledCount": 1, "status": "已结束"},
     {"offeringId": "2026F-CS101-01", "courseId": "CS101", "semesterId": "2026-FALL", "facultyId": "P1001", "section": "01", "days": ["MON", "WED"], "startTime": "09:00", "endTime": "10:15", "room": "科学楼201", "capacity": 10, "enrolledCount": 7, "status": "开放"},
     {"offeringId": "2026F-CS201-01", "courseId": "CS201", "semesterId": "2026-FALL", "facultyId": "P1002", "section": "01", "days": ["TUE", "THU"], "startTime": "10:30", "endTime": "11:45", "room": "科学楼105", "capacity": 10, "enrolledCount": 8, "status": "开放"},
     {"offeringId": "2026F-CS301-01", "courseId": "CS301", "semesterId": "2026-FALL", "facultyId": "P1003", "section": "01", "days": ["MON", "WED"], "startTime": "13:00", "endTime": "14:15", "room": "科学楼310", "capacity": 10, "enrolledCount": 10, "status": "已满"},
@@ -48,6 +56,10 @@
     {"offeringId": "2027S-CS315-01", "courseId": "CS315", "semesterId": "2027-SPRING", "facultyId": "P1004", "section": "01", "days": ["TUE", "THU"], "startTime": "13:00", "endTime": "14:15", "room": "科学楼220", "capacity": 10, "enrolledCount": 0, "status": "开放"},
     {"offeringId": "2027S-MATH210-01", "courseId": "MATH210", "semesterId": "2027-SPRING", "facultyId": "P1005", "section": "01", "days": ["MON", "WED", "FRI"], "startTime": "11:00", "endTime": "11:50", "room": "教学楼115", "capacity": 10, "enrolledCount": 0, "status": "开放"},
     {"offeringId": "2027S-STAT220-01", "courseId": "STAT220", "semesterId": "2027-SPRING", "facultyId": "P1005", "section": "01", "days": ["TUE", "THU"], "startTime": "15:00", "endTime": "16:15", "room": "教学楼210", "capacity": 10, "enrolledCount": 0, "status": "开放"},
-    {"offeringId": "2027S-BUS205-01", "courseId": "BUS205", "semesterId": "2027-SPRING", "facultyId": "P1006", "section": "01", "days": ["MON", "WED"], "startTime": "15:00", "endTime": "16:15", "room": "商学院101", "capacity": 10, "enrolledCount": 0, "status": "开放"}
+    {"offeringId": "2027S-BUS205-01", "courseId": "BUS205", "semesterId": "2027-SPRING", "facultyId": "P1006", "section": "01", "days": ["MON", "WED"], "startTime": "15:00", "endTime": "16:15", "room": "商学院101", "capacity": 10, "enrolledCount": 0, "status": "开放"},
+    {"offeringId": "2027S-CS105-01", "courseId": "CS105", "semesterId": "2027-SPRING", "facultyId": "P1001", "section": "01", "days": ["MON", "WED"], "startTime": "15:00", "endTime": "16:15", "room": "科学楼205", "capacity": 20, "enrolledCount": 0, "status": "开放"},
+    {"offeringId": "2027S-CS230-01", "courseId": "CS230", "semesterId": "2027-SPRING", "facultyId": "P1003", "section": "01", "days": ["TUE", "THU"], "startTime": "10:30", "endTime": "11:45", "room": "科学楼315", "capacity": 20, "enrolledCount": 0, "status": "开放"},
+    {"offeringId": "2027S-CS240-01", "courseId": "CS240", "semesterId": "2027-SPRING", "facultyId": "P1004", "section": "01", "days": ["MON", "WED"], "startTime": "10:30", "endTime": "11:45", "room": "科学楼220", "capacity": 20, "enrolledCount": 0, "status": "开放"},
+    {"offeringId": "2027S-BUS110-01", "courseId": "BUS110", "semesterId": "2027-SPRING", "facultyId": "P1006", "section": "01", "days": ["TUE", "THU"], "startTime": "09:00", "endTime": "10:15", "room": "商学院105", "capacity": 20, "enrolledCount": 0, "status": "开放"}
   ]
 }

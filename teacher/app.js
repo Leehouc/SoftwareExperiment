@@ -121,6 +121,11 @@ function currentSemesterName() {
   return state.data?.semester?.name || state.data?.semesterId || "未设置学期";
 }
 
+function rosterCoursesForSelectedSemester() {
+  const semesterId = state.data?.semesterId;
+  return (state.data?.rosterCourses || []).filter((course) => course.semesterId === semesterId);
+}
+
 function offeringTime(offering) {
   const dayLabels = { MON: "周一", TUE: "周二", WED: "周三", THU: "周四", FRI: "周五", SAT: "周六", SUN: "周日" };
   const days = Array.isArray(offering.days) ? offering.days : String(offering.days || "").split(",");
@@ -151,7 +156,7 @@ async function loadData(semesterId = "") {
   if (user !== state.user) return;
   state.data = data;
   state.selectedOfferingIds = [...(data.selectedOfferingIds || [])];
-  const rosterCourses = data.rosterCourses || [];
+  const rosterCourses = (data.rosterCourses || []).filter((course) => course.semesterId === data.semesterId);
   if (!rosterCourses.some((course) => course.offeringId === state.activeOfferingId)) {
     state.activeOfferingId = rosterCourses[0]?.offeringId || "";
   }
@@ -247,7 +252,7 @@ function renderTeachingSelection() {
 }
 
 function renderGradeCourses() {
-  const courses = state.data.rosterCourses || [];
+  const courses = rosterCoursesForSelectedSemester();
   const list = document.getElementById("grade-course-list");
   document.getElementById("grade-course-total").textContent = String(courses.length);
   document.getElementById("no-grade-courses").hidden = courses.length > 0;
@@ -282,7 +287,7 @@ function renderRoster() {
     saveButton.disabled = true;
     return;
   }
-  const course = (state.data.rosterCourses || []).find((item) => item.offeringId === state.rosterData.offeringId);
+  const course = rosterCoursesForSelectedSemester().find((item) => item.offeringId === state.rosterData.offeringId);
   const rows = state.rosterData.roster || [];
   const canEditGrades = state.rosterData.canEditGrades === true;
   document.getElementById("roster-grade-hint").textContent = canEditGrades

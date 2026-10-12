@@ -30,6 +30,11 @@ python init_database.py --reset
 | --- | --- | --- |
 | 学生 | `student.lin` | `StudentDemo1!` |
 | 学生 | `student.chen` | `StudentDemo2!` |
+| 学生 | `student.wang` | `StudentDemo3!` |
+| 学生 | `student.zhao` | `StudentDemo4!` |
+| 学生 | `student.zhou` | `StudentDemo5!` |
+| 学生 | `student.wu` | `StudentDemo6!` |
+| 学生 | `student.liu` | `StudentDemo7!` |
 | 教师 P1001-P1006 | `prof.chen`、`prof.ortega`、`prof.shah`、`prof.brooks`、`prof.wu`、`prof.johnson` | 对应编号的 `ProfessorDemo1!` 至 `ProfessorDemo6!` |
 | 教务员 | `registrar.demo` | `RegistrarDemo1!` |
 
@@ -89,7 +94,7 @@ SQLite 外键需要在每个连接上启用。用户名、成绩和学生档案�
 
 ## 演示记录
 
-数据库包含两名虚构学生、六名教师、一名教务员、2027 春季学期的 4+2 课表草稿、2026 春季的历史成绩、教师授课选择和一笔账单记录。所有课程/开课标识与当前 `data/catalog.json` 的课程目录保持分离；历史成绩保留课程名称快照，以便目录服务不提供旧学期开课时仍能演示成绩单。
+数据库包含七名虚构学生（其中两名带有课表与历史成绩）、六名教师、一名教务员、教师授课选择和一笔账单记录。数据库只保存课程目录的外部课程/开课编号，不复制课程目录数据；`data/catalog.json` 现在包含与历史授课记录匹配的 2026 年春季学期及三个开课班次，便于读取历史名册和查看课程情况。历史成绩仍保留课程名称快照，避免目录内容变化影响成绩单。
 
 ## MySQL 多电脑部署
 

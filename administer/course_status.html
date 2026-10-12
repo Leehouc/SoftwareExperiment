@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f6f8">
+  <title>课程情况 · CourseFlow</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/course-status.css">
+  <script src="/course-status.js" defer></script>
+</head>
+<body class="course-status-page">
+  <header class="course-topbar">
+    <a class="button subtle back-button" href="/?view=registration"><span aria-hidden="true">←</span> 返回注册管理</a>
+    <div class="course-brand"><span class="brand-mark">CF</span><span>COURSEFLOW <small>REGISTRAR CONSOLE</small></span></div>
+  </header>
+  <main class="course-main">
+    <section class="course-heading">
+      <div>
+        <p class="eyebrow">COURSE OFFERINGS</p>
+        <h1 id="semester-name">正在读取课程…</h1>
+        <p id="semester-subtitle">本学期开课、任课教师和选课人数一览</p>
+      </div>
+      <div id="period-badge" class="course-period-badge"></div>
+    </section>
+
+    <div id="course-state" class="course-state"><span class="loader"></span>正在读取课程目录和注册数据…</div>
+    <section id="course-content" hidden>
+      <div id="course-summary" class="course-summary"></div>
+      <section class="course-table-panel">
+        <div class="course-panel-head">
+          <div><h2>课程开设明细</h2><p>按开课班次展示；目录人数与本系统注册人数分开展示</p></div>
+          <div class="course-tools">
+            <label class="course-search"><span aria-hidden="true">⌕</span><input id="course-search" type="search" placeholder="搜索课程、教师或班次" aria-label="搜索课程"></label>
+            <select id="course-filter" aria-label="按开课状态筛选">
+              <option value="ALL">全部状态</option>
+              <option value="OPEN">开放</option>
+              <option value="FULL">已满</option>
+              <option value="CLOSED">已关闭 / 已撤回</option>
+              <option value="UNASSIGNED">未关联教师</option>
+            </select>
+          </div>
+        </div>
+        <div class="course-table-scroll">
+          <table class="course-table">
+            <thead><tr><th>课程 / 班次</th><th>任课教师</th><th>上课时间与地点</th><th>学生人数 / 容量</th><th>待提交主选</th><th>开课状态</th></tr></thead>
+            <tbody id="course-rows"></tbody>
+          </table>
+        </div>
+        <div id="course-empty" class="course-empty" hidden>没有符合条件的开课记录。</div>
+        <footer class="course-table-foot"><span id="course-count-label"></span><span>学生人数 = 课程目录已有 + 本系统已注册</span></footer>
+      </section>
+      <p class="course-footnote">课程与开课信息来自只读课程目录；任课教师关联、系统注册和未提交主选来自课程注册数据库。</p>
+    </section>
+    <div id="course-error" class="course-error" hidden></div>
+  </main>
+</body>
+</html>

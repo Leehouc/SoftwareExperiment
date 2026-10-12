@@ -1,6 +1,10 @@
 (() => {
   const $ = (selector, root = document) => root.querySelector(selector);
   const state = { user: null, csrf: "", data: null, view: "overview", query: "", statusFilter: "ALL", edit: null };
+  const returnView = new URLSearchParams(window.location.search).get("view");
+  if (["overview", "students", "professors", "registration", "billing"].includes(returnView)) {
+    state.view = returnView;
+  }
   const loginScreen = $("#login-screen");
   const shell = $("#app-shell");
   const page = $("#page-content");
@@ -159,14 +163,15 @@
     const openCount = periods.filter((item) => item.status === "OPEN").length;
     const cards = periods.map((period) => {
       const canClose = period.status === "OPEN";
+      const canReopen = period.status === "CLOSED";
       return `<article class="registration-card"><div class="registration-card-top"><div><h3>${esc(period.name)}</h3><p>学期编号：${esc(period.semesterId)}</p></div>${pill(period.status)}</div>
         <div class="date-row"><div class="date-pair"><small>选课注册</small><b>${dateText(period.registrationStartAt)} — ${dateText(period.registrationEndAt)}</b></div><div class="date-pair"><small>加退选</small><b>${dateText(period.addDropStartAt)} — ${dateText(period.addDropEndAt)}</b></div></div>
         ${period.closedAt ? `<div class="date-row"><div class="date-pair"><small>关闭时间</small><b>${dateText(period.closedAt)}</b></div></div>` : ""}
-        ${canClose ? `<div class="card-actions"><button class="button primary" data-action="close-registration" data-semester="${esc(period.semesterId)}" data-name="${esc(period.name)}">关闭本学期注册 →</button></div>` : ""}</article>`;
+        <div class="card-actions"><button class="button subtle" data-action="course-status" data-semester="${esc(period.semesterId)}">查看课程情况 ↗</button>${canClose ? `<button class="button primary" data-action="close-registration" data-semester="${esc(period.semesterId)}" data-name="${esc(period.name)}">关闭本学期注册 →</button>` : canReopen ? `<button class="button subtle" data-action="reopen-registration" data-semester="${esc(period.semesterId)}" data-name="${esc(period.name)}">重新开启注册</button>` : ""}</div></article>`;
     }).join("");
     return `${heading("注册期管理", "核对注册窗口，并在选课结束后结算当学期注册。", `<span class="pill ${openCount ? "green" : "gray"}">${openCount} 个开放</span>`)}
       <section class="registration-grid"><div>${cards || `<article class="panel empty-state">数据库中没有注册期记录。</article>`}</div>
-        <aside><article class="registration-card"><div class="eyebrow">关闭流程</div><h3>确认后将执行</h3><p>关闭属于事务操作，完成后不能通过本页面重新开放。</p><div class="date-row"><div class="date-pair"><small>最低开课人数</small><b>${state.data.minimumEnrollment} 名学生</b></div><div class="date-pair"><small>每份课表上限</small><b>4 门课程</b></div></div></article>
+        <aside><article class="registration-card"><div class="eyebrow">注册期管理</div><h3>关闭与重新开放</h3><p>重新开放不会撤销既有结算；已结算学期再次关闭只切回关闭状态，不重复处理课表或账单。学生仍受注册时间范围限制。</p><div class="date-row"><div class="date-pair"><small>最低开课人数</small><b>${state.data.minimumEnrollment} 名学生</b></div><div class="date-pair"><small>每份课表上限</small><b>4 门课程</b></div></div></article>
           <div class="info-callout"><b>替代课与开课检查</b>优先保留有效主选，再按顺序尝试备选；检查授课教师、容量、先修课和时间冲突。低于最低人数或未分配教师的课程会被取消。</div>
           <div class="info-callout warning"><b>账单处理</b>关闭注册时按每学分 ¥${(state.data.feePerCreditCents / 100).toFixed(2)} 计算金额并写入队列；配置账单接口后，服务会发送并重试。</div>
         </aside></section>`;
@@ -249,14 +254,32 @@
         await refreshData();
       } catch (error) { toast(error.message, "error"); }
     }));
+    document.querySelectorAll("[data-action='course-status']").forEach((button) => button.addEventListener("click", () => {
+      window.location.assign(`/course-status?semester=${encodeURIComponent(button.dataset.semester)}`);
+    }));
     document.querySelectorAll("[data-action='close-registration']").forEach((button) => button.addEventListener("click", async () => {
-      const message = `确定关闭“${button.dataset.name}”注册期吗？\n\n系统将完成选课校验、备选课填充、低人数课程取消、课表结算和账单入队。该操作不可撤销。`;
+      const message = `确定关闭“${button.dataset.name}”注册期吗？\n\n首次关闭会执行选课校验、备选课填充、课程取消、课表结算和账单入队。若该学期此前已关闭并结算过，本次只会关闭注册状态，不会重复处理课表或账单。`;
       if (!window.confirm(message)) return;
       button.disabled = true;
       try {
         const payload = await api("/api/admin/registration/close", { method: "POST", body: JSON.stringify({ semesterId: button.dataset.semester, confirm: true }) });
         const result = payload.result;
-        toast(`注册已关闭：取消 ${result.cancelledOfferings.length} 门课程、${result.cancelledSchedules} 份课表，生成 ${result.billingTransactionsQueued} 笔待发送账单。`, "success");
+        toast(result.alreadyFinalized
+          ? "注册已关闭；本次没有重复结算课表、取消课程或生成账单。"
+          : `注册已关闭：取消 ${result.cancelledOfferings.length} 门课程、${result.cancelledSchedules} 份课表，生成 ${result.billingTransactionsQueued} 笔待发送账单。`, "success");
+        await refreshData();
+      } catch (error) {
+        button.disabled = false;
+        toast(error.message, "error");
+      }
+    }));
+    document.querySelectorAll("[data-action='reopen-registration']").forEach((button) => button.addEventListener("click", async () => {
+      const message = `确定重新开启“${button.dataset.name}”的注册吗？\n\n这只会将注册状态改为开放，不会撤销已经完成的课表结算、课程取消或账单记录。学生能否修改课表仍由注册时间与加退选时间范围决定。`;
+      if (!window.confirm(message)) return;
+      button.disabled = true;
+      try {
+        await api("/api/admin/registration/reopen", { method: "POST", body: JSON.stringify({ semesterId: button.dataset.semester, confirm: true }) });
+        toast("注册状态已重新开放；既有课表结算、课程取消和账单记录未更改。", "success");
         await refreshData();
       } catch (error) {
         button.disabled = false;
@@ -299,6 +322,13 @@
       await enterApp(result.user, session.csrfToken);
     } catch (error) { toast(error.message, "error"); }
     finally { button.disabled = false; }
+  });
+
+  $("#load-demo-account").addEventListener("click", () => {
+    const form = $("#login-form");
+    form.elements.username.value = "registrar.demo";
+    form.elements.password.value = "RegistrarDemo1!";
+    form.elements.password.focus();
   });
 
   $("#logout-button").addEventListener("click", async () => {

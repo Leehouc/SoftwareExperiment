@@ -49,6 +49,16 @@ SELECT * FROM v_student_report_cards;
 SELECT * FROM v_course_rosters;
 ```
 
+## 给已有 MySQL 数据库补充学生演示账号
+
+迁移完成后若新增演示账号，不要重新运行迁移脚本（迁移只接受空目标库）。在项目根目录 PowerShell 中运行下面的命令；脚本会安全询问 MySQL 应用账号密码。默认连接参数为 `127.0.0.1:3306`、`course_app`、`course_registration`；若使用远程 MySQL，可先设置对应的 `MYSQL_HOST` 等环境变量。
+
+```powershell
+py -3 .\database\seed_demo_students_mysql.py
+```
+
+该脚本只补充 `student.wang`、`student.zhao`、`student.zhou`、`student.wu` 和 `student.liu` 五个账号；重复运行不会覆盖已存在的账户资料或密码。演示密码见 [学生板块说明](../student/README.md)。
+
 ## 新系统连接约定
 
 迁移只负责数据库和数据，现有 `app.py` 仍是只读课程目录服务，没有连接注册数据库。新系统的后端要读取环境变量并使用 Connector/Python 建立连接，不能把 MySQL 管理员密码写入源代码。多台电脑应访问同一个后端 API；后端再连接 MySQL。不要让各个桌面客户端直接共用管理员数据库账号。

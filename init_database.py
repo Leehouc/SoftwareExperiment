@@ -35,6 +35,51 @@ STUDENTS = [
         "status": "ACTIVE",
         "graduation_date": "2027-06-30",
     },
+    {
+        "student_id": "S2026003",
+        "username": "student.wang",
+        "password": "StudentDemo3!",
+        "full_name": "王子轩",
+        "date_of_birth": "2005-06-16",
+        "status": "ACTIVE",
+        "graduation_date": "2028-06-30",
+    },
+    {
+        "student_id": "S2026004",
+        "username": "student.zhao",
+        "password": "StudentDemo4!",
+        "full_name": "赵思涵",
+        "date_of_birth": "2005-02-21",
+        "status": "ACTIVE",
+        "graduation_date": "2028-06-30",
+    },
+    {
+        "student_id": "S2026005",
+        "username": "student.zhou",
+        "password": "StudentDemo5!",
+        "full_name": "周明远",
+        "date_of_birth": "2004-12-03",
+        "status": "ACTIVE",
+        "graduation_date": "2027-06-30",
+    },
+    {
+        "student_id": "S2026006",
+        "username": "student.wu",
+        "password": "StudentDemo6!",
+        "full_name": "吴佳宁",
+        "date_of_birth": "2005-08-30",
+        "status": "ACTIVE",
+        "graduation_date": "2028-06-30",
+    },
+    {
+        "student_id": "S2026007",
+        "username": "student.liu",
+        "password": "StudentDemo7!",
+        "full_name": "刘星宇",
+        "date_of_birth": "2005-11-08",
+        "status": "ACTIVE",
+        "graduation_date": "2028-06-30",
+    },
 ]
 
 PROFESSORS = [
@@ -56,6 +101,10 @@ ELIGIBILITY = [
     ("P1005", "MATH210"),
     ("P1005", "STAT220"),
     ("P1006", "BUS205"),
+    ("P1001", "CS105"),
+    ("P1003", "CS230"),
+    ("P1004", "CS240"),
+    ("P1006", "BUS110"),
 ]
 
 OFFERING_ASSIGNMENTS = [
@@ -175,7 +224,7 @@ def seed(connection: sqlite3.Connection) -> None:
 
     # Completed prior-semester coursework supports prerequisite checks and report cards.
     historical_schedules: dict[str, int] = {}
-    for student in STUDENTS:
+    for student in STUDENTS[:2]:
         schedule_id = get_or_create_schedule(connection, student["student_id"], "2026-SPRING", "FINALIZED")
         historical_schedules[student["student_id"]] = schedule_id
         selected = HISTORICAL_COURSES if student["student_id"] == "S2026001" else HISTORICAL_COURSES[:2]

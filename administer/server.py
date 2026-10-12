@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 from urllib.request import Request, urlopen
 
 
@@ -252,6 +252,135 @@ def _record_data(catalog: dict[str, Any]) -> dict[str, Any]:
         "catalog": catalog,
         "feePerCreditCents": AMOUNT_CENTS_PER_CREDIT,
         "minimumEnrollment": MINIMUM_OFFERING_ENROLLMENT,
+    }
+
+
+def _course_status_data(semester_id: str, catalog: dict[str, Any]) -> dict[str, Any]:
+    semesters = {str(item.get("semesterId")): item for item in catalog.get("semesters", [])}
+    semester = semesters.get(semester_id)
+    if semester is None:
+        raise ApiError("课程目录中找不到这个学期。", 404)
+    offerings = [
+        item for item in catalog.get("courseOfferings", [])
+        if str(item.get("semesterId")) == semester_id
+    ]
+
+    connection = get_connection()
+    try:
+        period = _query_one(
+            connection,
+            "SELECT registration_status AS status FROM registration_periods WHERE semester_id = %s",
+            (semester_id,),
+        )
+        assignment_rows = _query_all(
+            connection,
+            "SELECT p.offering_id AS offeringId, p.selection_status AS selectionStatus, "
+            "p.professor_id AS professorId, f.full_name AS professorName, f.status AS professorStatus "
+            "FROM professor_offering_selections p LEFT JOIN professors f ON f.professor_id = p.professor_id "
+            "WHERE p.semester_id = %s",
+            (semester_id,),
+        )
+        enrollment_rows = _query_all(
+            connection,
+            "SELECT e.offering_id AS offeringId, COUNT(DISTINCT sch.student_id) AS studentCount "
+            "FROM enrollments e JOIN student_schedules sch ON sch.schedule_id = e.schedule_id "
+            "JOIN students s ON s.student_id = sch.student_id "
+            "WHERE sch.semester_id = %s AND s.status = 'ACTIVE' AND e.enrollment_status = 'ENROLLED' "
+            "GROUP BY e.offering_id",
+            (semester_id,),
+        )
+        choice_rows = _query_all(
+            connection,
+            "SELECT c.offering_id AS offeringId, COUNT(DISTINCT sch.student_id) AS studentCount "
+            "FROM schedule_choices c JOIN student_schedules sch ON sch.schedule_id = c.schedule_id "
+            "JOIN students s ON s.student_id = sch.student_id "
+            "LEFT JOIN enrollments e ON e.schedule_id = c.schedule_id AND e.offering_id = c.offering_id "
+            "AND e.enrollment_status = 'ENROLLED' "
+            "WHERE sch.semester_id = %s AND s.status = 'ACTIVE' AND c.choice_type = 'PRIMARY' "
+            "AND c.selection_status = 'SELECTED' AND e.enrollment_id IS NULL GROUP BY c.offering_id",
+            (semester_id,),
+        )
+    finally:
+        connection.close()
+
+    assignments = {str(row["offeringId"]): row for row in assignment_rows}
+    enrolled = {str(row["offeringId"]): int(row["studentCount"]) for row in enrollment_rows}
+    selected = {str(row["offeringId"]): int(row["studentCount"]) for row in choice_rows}
+    courses = {str(item.get("courseId")): item for item in catalog.get("courses", [])}
+    faculty = {str(item.get("facultyId")): item for item in catalog.get("faculty", [])}
+    rows: list[dict[str, Any]] = []
+    for offering in offerings:
+        offering_id = str(offering.get("offeringId", ""))
+        course_id = str(offering.get("courseId", ""))
+        assignment = assignments.get(offering_id)
+        assignment_status = str(assignment.get("selectionStatus", "")).upper() if assignment else ""
+        has_active_teacher = bool(
+            assignment and assignment_status in {"SELECTED", "CONFIRMED"}
+            and str(assignment.get("professorStatus", "")).upper() == "ACTIVE"
+        )
+        directory_faculty = faculty.get(str(offering.get("facultyId", "")), {})
+        if has_active_teacher:
+            teacher_name = assignment.get("professorName") or directory_faculty.get("name") or "已分配教师"
+            teacher_source = "本地教师档案"
+        elif directory_faculty:
+            teacher_name = directory_faculty.get("name", "目录教师")
+            teacher_source = "课程目录（未关联有效教师档案）"
+        else:
+            teacher_name = "未分配"
+            teacher_source = ""
+
+        capacity = max(0, int(offering.get("capacity") or 0))
+        directory_count = max(0, int(offering.get("enrolledCount") or 0))
+        system_count = enrolled.get(offering_id, 0)
+        total_count = directory_count + system_count
+        directory_status = str(offering.get("status", "未知"))
+        if assignment_status == "WITHDRAWN":
+            status = "教师已撤回"
+        elif assignment and not has_active_teacher:
+            status = "教师不可用"
+        elif not assignment:
+            status = "未关联教师"
+        elif capacity and total_count >= capacity:
+            status = "已满"
+        elif directory_status.upper() not in {"开放", "OPEN", "AVAILABLE"}:
+            status = directory_status
+        elif not period:
+            status = "未配置注册期"
+        elif str(period["status"]).upper() == "CLOSED":
+            status = "注册已关闭"
+        elif str(period["status"]).upper() != "OPEN":
+            status = "注册状态未知"
+        else:
+            status = "开放"
+        course = courses.get(course_id, {})
+        rows.append({
+            "offeringId": offering_id,
+            "courseId": course_id,
+            "courseTitle": course.get("title", course_id),
+            "credits": int(course.get("credits") or 0),
+            "section": offering.get("section", ""),
+            "semesterId": semester_id,
+            "teacherName": teacher_name,
+            "teacherSource": teacher_source,
+            "professorId": assignment.get("professorId") if assignment else None,
+            "assignmentStatus": assignment_status or "UNASSIGNED",
+            "directoryStatus": directory_status,
+            "status": status,
+            "capacity": capacity,
+            "studentCount": total_count,
+            "directoryStudentCount": directory_count,
+            "systemStudentCount": system_count,
+            "selectedCount": selected.get(offering_id, 0),
+            "days": offering.get("days") or [],
+            "startTime": offering.get("startTime", ""),
+            "endTime": offering.get("endTime", ""),
+            "room": offering.get("room", ""),
+        })
+    rows.sort(key=lambda row: (row["courseId"], str(row["section"]), row["offeringId"]))
+    return {
+        "semester": {"semesterId": semester_id, "name": semester.get("name", semester_id)},
+        "registrationStatus": str(period["status"]) if period else "UNKNOWN",
+        "courses": rows,
     }
 
 
@@ -542,7 +671,38 @@ def _close_registration(semester_id: str, session: dict[str, Any], catalog: dict
         if isinstance(end_date, datetime):
             end_date = end_date.date()
         if not isinstance(start_date, date) or not isinstance(end_date, date) or not start_date <= date.today() <= end_date:
-            raise ApiError("当前日期不在该学期的注册窗口内，没有执行任何更改。", 409)
+            previous_close = _query_one(
+                connection,
+                "SELECT COUNT(*) AS close_count FROM audit_logs "
+                "WHERE action = 'CLOSE_REGISTRATION' AND entity_type = 'SEMESTER' AND entity_id = %s",
+                (semester_id,),
+            )
+            if not previous_close or int(previous_close.get("close_count") or 0) == 0:
+                raise ApiError("当前日期不在该学期的注册窗口内，没有执行任何更改。", 409)
+
+            # 已经结算过的注册期被手动重新开放后，只恢复关闭状态，避免重复结算历史课表。
+            cursor = connection.cursor()
+            try:
+                cursor.execute(
+                    "UPDATE registration_periods SET registration_status = 'CLOSED', "
+                    "closed_at = CURRENT_TIMESTAMP(3) WHERE semester_id = %s",
+                    (semester_id,),
+                )
+            finally:
+                cursor.close()
+            _insert_audit(
+                connection, _audit_actor(session), "CLOSE_REGISTRATION", "SEMESTER", semester_id,
+                {"reclosedAfterPreviousClose": True, "settlementRepeated": False,
+                 "cancelledOfferings": [], "cancelledSchedules": 0,
+                 "billingTransactionsQueued": 0},
+            )
+            return {
+                "cancelledOfferings": [],
+                "cancelledSchedules": 0,
+                "billingTransactionsQueued": 0,
+                "minimumEnrollment": MINIMUM_OFFERING_ENROLLMENT,
+                "alreadyFinalized": True,
+            }
         assignments_rows = _query_all(
             connection,
             "SELECT p.offering_id AS offeringId, p.selection_status AS status, p.professor_id AS professorId, "
@@ -789,7 +949,40 @@ def _close_registration(semester_id: str, session: dict[str, Any], catalog: dict
         "cancelledSchedules": 0,
         "billingTransactionsQueued": billed_students,
         "minimumEnrollment": MINIMUM_OFFERING_ENROLLMENT,
+        "alreadyFinalized": False,
     }
+
+
+def _reopen_registration(semester_id: str, session: dict[str, Any]) -> dict[str, Any]:
+    """重新开放注册状态；不回滚关闭时已完成的课表结算、课程取消或账单。"""
+    with transaction() as connection:
+        period = _query_one(
+            connection,
+            "SELECT registration_status, closed_at FROM registration_periods "
+            "WHERE semester_id = %s FOR UPDATE",
+            (semester_id,),
+        )
+        if period is None:
+            raise ApiError("找不到所选注册期。", 404)
+        if str(period["registration_status"]).upper() != "CLOSED":
+            raise ApiError("该注册期当前并未关闭，无需重新开放。", 409)
+
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                "UPDATE registration_periods SET registration_status = 'OPEN', closed_at = NULL "
+                "WHERE semester_id = %s",
+                (semester_id,),
+            )
+        finally:
+            cursor.close()
+        _insert_audit(
+            connection, _audit_actor(session), "REOPEN_REGISTRATION", "SEMESTER", semester_id,
+            {"previousStatus": "CLOSED", "status": "OPEN",
+             "previousClosedAt": str(period["closed_at"]) if period["closed_at"] else None,
+             "effectsReversed": False},
+        )
+    return {"semesterId": semester_id, "status": "OPEN"}
 
 
 class RegistrarHandler(BaseHTTPRequestHandler):
@@ -861,7 +1054,10 @@ class RegistrarHandler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         static = {"/": ("index.html", "text/html; charset=utf-8"),
                   "/styles.css": ("styles.css", "text/css; charset=utf-8"),
-                  "/app.js": ("app.js", "text/javascript; charset=utf-8")}
+                  "/app.js": ("app.js", "text/javascript; charset=utf-8"),
+                  "/course-status": ("course_status.html", "text/html; charset=utf-8"),
+                  "/course-status.css": ("course_status.css", "text/css; charset=utf-8"),
+                  "/course-status.js": ("course_status.js", "text/javascript; charset=utf-8")}
         if path in static:
             self._serve_file(*static[path])
             return
@@ -877,6 +1073,13 @@ class RegistrarHandler(BaseHTTPRequestHandler):
             if path == "/api/admin/data":
                 self._require_session()
                 self._send_json(200, _record_data(_fetch_catalog()))
+                return
+            if path == "/api/admin/course-status":
+                self._require_session()
+                semester_id = parse_qs(urlparse(self.path).query).get("semester", [""])[0].strip()
+                if not semester_id:
+                    raise ApiError("请提供学期编号。")
+                self._send_json(200, _course_status_data(semester_id, _fetch_catalog()))
                 return
         except ApiError as exc:
             self._send_json(exc.status, {"error": str(exc)})
@@ -941,6 +1144,13 @@ class RegistrarHandler(BaseHTTPRequestHandler):
                 if not semester_id or body.get("confirm") is not True:
                     raise ApiError("请确认学期并完成关闭操作。")
                 result = _close_registration(semester_id, session, _fetch_catalog())
+                self._send_json(200, {"ok": True, "result": result})
+                return
+            if path == "/api/admin/registration/reopen":
+                semester_id = str(body.get("semesterId", "")).strip()
+                if not semester_id or body.get("confirm") is not True:
+                    raise ApiError("请确认学期并完成重新开放操作。")
+                result = _reopen_registration(semester_id, session)
                 self._send_json(200, {"ok": True, "result": result})
                 return
         except ApiError as exc:
